@@ -1,0 +1,480 @@
+openapi: 3.0.0
+info:
+  title: Календарь встреч
+  description: |-
+    Единый декларативный контракт API «Календаря встреч» — единственный источник
+    истины (K1, ADR-0004). Из него генерируются contract/openapi.yaml, TS-типы
+    для фронта (src/lib/contract.gen.ts) и сервера (server/contract.gen.ts);
+    руками .gen.ts не правятся — только `npm run contract`.
+
+    Записи на встречи. Все /api, кроме входа, требуют сессионную cookie;
+    админские ручки дополнительно требуют роль admin (иначе 403).
+
+    Контракт описывает формат и схему, не домен: прошедшие даты, выходные и
+    сетка слотов остаются фронтовой политикой. Сервер сверх форматной проверки
+    (server/validate.ts, ajv) ловит только нарушения целостности — несуществующий
+    или деактивированный тип, пустой/длинный booker из сессии (routes.ts, S5/C1).
+
+    Часть ручек описана ЗАРАНЕЕ и сервером ещё не реализована (S4): контракт
+    намеренно идёт впереди, чтобы клиентский SDK (K3) собрал их до реализации.
+    Тест сверяет с контрактом только фактически смонтированные роуты.
+  version: 0.0.0
+tags: []
+paths:
+  /api/admin/meetings:
+    get:
+      operationId: listPlannedMeetings
+      description: |-
+        Все запланированные встречи одним списком: сегодня и будущее, по возрастанию
+        (date, time), без 14-дневного горизонта. Только админ (C5). (S4)
+      parameters: []
+      responses:
+        '200':
+          description: 'Все запланированные встречи для админа (S4): сегодня и будущее, без горизонта.'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlannedMeeting'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Нет прав: сессия есть, но роль не admin (T2).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+  /api/login:
+    post:
+      operationId: login
+      description: |-
+        Вход. Роль определяется только по паролю; для гостя обязателен непустой
+        bookerName (400), неверный пароль — 401. В ответ выставляется cookie `session`.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+  /api/logout:
+    post:
+      operationId: logout
+      description: 'Выход: сессионная cookie очищается, тела нет. Без сессии — 401.'
+      parameters: []
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+  /api/me:
+    get:
+      operationId: getCurrentSession
+      description: 'Восстановление роли после перезагрузки: cookie httpOnly, клиент прочитать её не может.'
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+  /api/meeting-types:
+    get:
+      operationId: listMeetingTypes
+      description: Список типов встреч. Гость видит только активные, админ — все (Q2/Q7). (S3)
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MeetingType'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+    post:
+      operationId: createMeetingType
+      description: Создание типа встречи. Только админ. (S3)
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingType'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Нет прав: сессия есть, но роль не admin (T2).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeetingTypeDraft'
+      security:
+        - ApiKeyAuth: []
+  /api/meeting-types/{id}/deactivate:
+    post:
+      operationId: deactivateMeetingType
+      description: Деактивация типа; удаления нет (Q7). Только админ. (S3)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingType'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 'Нет прав: сессия есть, но роль не admin (T2).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+  /api/meetings:
+    get:
+      operationId: listMeetings
+      description: Записи за полуинтервал дат, обе границы включительно, в порядке возрастания (date, time).
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: День начала, включительно, 'YYYY-MM-DD'.
+          schema:
+            type: string
+          explode: false
+        - name: to
+          in: query
+          required: true
+          description: День конца, включительно, 'YYYY-MM-DD'.
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Meeting'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
+    post:
+      operationId: createMeeting
+      description: |-
+        Создание записи. Формат — 400; занятый слот — 409 (UNIQUE(date, time) в базе).
+        Выбор несуществующего/деактивированного типа — тоже 400 (S5, C1).
+        `booker` берётся из подписанной сессионной cookie, никогда из тела (Q4):
+        поле `booker` в теле игнорируется (C10), а его отсутствие в сессии (админ)
+        или длина больше 100 символов — 400. Окно/выходные/прошлое сервер не
+        проверяет (C1) — это политика UI. Возвращает запись с присвоенным id.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meeting'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeetingDraft'
+      security:
+        - ApiKeyAuth: []
+components:
+  schemas:
+    DateRange:
+      type: object
+      required:
+        - from
+        - to
+      properties:
+        from:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: День начала, включительно, 'YYYY-MM-DD'.
+        to:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: День конца, включительно, 'YYYY-MM-DD'.
+      description: Полуинтервал дат для запроса списка записей, обе границы включительно.
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+      description: 'Форма всех ошибок API: русское описание уходит клиенту как есть.'
+    LoginInput:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          minLength: 1
+          pattern: \S
+          description: |-
+            Пароль — непустая строка, минимум один непробельный символ: `'   '` не
+            проходит, хотя с одним лишь `@minLength(1)` прошло бы.
+        bookerName:
+          type: string
+          description: 'Имя гостя: для гостя обязательно (непустая строка), для админа игнорируется.'
+      description: 'Данные входа: пароль обязателен, имя гостя — опционально.'
+    Meeting:
+      type: object
+      required:
+        - id
+        - date
+        - time
+      properties:
+        id:
+          type: string
+          description: Идентификатор, присваиваемый базой данных.
+        date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: День встречи, 'YYYY-MM-DD'.
+        time:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          description: Начало встречи, 'HH:mm'.
+      description: |-
+        Запись на встречу. Дата и время — строки в том формате, в котором их отдаёт
+        Mantine: 'YYYY-MM-DD' и 'HH:mm'. Строки, а не Date, ещё и потому, что
+        new Date('YYYY-MM-DD') разбирается как полночь UTC и в отрицательных
+        часовых поясах показывает предыдущий день.
+    MeetingDraft:
+      type: object
+      required:
+        - date
+        - time
+      properties:
+        date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: День встречи, 'YYYY-MM-DD'.
+        time:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          description: Начало встречи, 'HH:mm'.
+        meeting_type_id:
+          type: string
+          description: |-
+            Тип встречи. Если поле передано — тип обязан существовать и быть активным,
+            иначе 400 (S5, C1); без поля запись создаётся «нетипизированной», как
+            легаси-строки C5 (гостевой флоу F7 всегда передаёт тип). Формат — строка:
+            не-строка отклоняется схемой как 400, а несуществующая строка — проверкой
+            целостности в роуте.
+      description: Данные новой записи — всё, кроме идентификатора; booker сюда не входит.
+    MeetingType:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - active
+      properties:
+        id:
+          type: string
+          description: Идентификатор, присваиваемый базой данных.
+        name:
+          type: string
+          minLength: 1
+          description: Название типа — непустая строка.
+        description:
+          type: string
+          description: Описание типа.
+        active:
+          type: boolean
+          description: 'Активен ли тип: деактивированный нельзя выбрать при новой записи (Q7).'
+      description: |-
+        Тип встречи, предлагаемый администратором (Q2). Длительность не моделируется —
+        на сетку слотов она не влияет. Удаления нет: деактивация — единственный конец
+        жизненного цикла (Q7).
+    MeetingTypeDraft:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          pattern: \S
+          description: |-
+            Название типа — непустая строка, минимум один непробельный символ: `'   '`
+            не проходит, хотя с одним лишь `@minLength(1)` прошло бы (тот же приём,
+            что у `LoginInput.password`, K4).
+        description:
+          type: string
+          description: Описание типа.
+      description: Данные нового типа встречи — всё, кроме идентификатора и признака активности.
+    PlannedMeeting:
+      type: object
+      required:
+        - date
+        - time
+        - type
+        - booker
+      properties:
+        date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: День встречи, 'YYYY-MM-DD'.
+        time:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          description: Начало встречи, 'HH:mm'.
+        type:
+          type: string
+          nullable: true
+          description: Название типа встречи; null у старой записи без типа.
+        booker:
+          type: string
+          nullable: true
+          description: Имя записавшегося; null у старой записи без booker.
+      description: |-
+        Строка админского списка запланированных встреч: LEFT JOIN, поэтому у старых
+        «нетипизированных» записей `type` и `booker` равны null (C5).
+    Session:
+      type: object
+      required:
+        - role
+        - bookerName
+      properties:
+        role:
+          type: string
+          enum:
+            - admin
+            - guest
+        bookerName:
+          type: string
+          nullable: true
+          description: Имя записывающегося; у админа его нет.
+      description: Сессия — то, что подписано в httpOnly-cookie `session` и определяет доступ.
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: cookie
+      name: session

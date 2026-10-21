@@ -1,0 +1,473 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "calendar-of-meetings",
+    "$defs": {
+        "Session": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Session.json",
+            "type": "object",
+            "properties": {
+                "role": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "const": "admin"
+                        },
+                        {
+                            "type": "string",
+                            "const": "guest"
+                        }
+                    ]
+                },
+                "bookerName": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Имя записывающегося; у админа его нет."
+                }
+            },
+            "required": [
+                "role",
+                "bookerName"
+            ],
+            "description": "Сессия — то, что подписано в httpOnly-cookie `session` и определяет доступ."
+        },
+        "LoginInput": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "LoginInput.json",
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "description": "Пароль — непустая строка, минимум один непробельный символ: `'   '` не\nпроходит, хотя с одним лишь `@minLength(1)` прошло бы."
+                },
+                "bookerName": {
+                    "type": "string",
+                    "description": "Имя гостя: для гостя обязательно (непустая строка), для админа игнорируется."
+                }
+            },
+            "required": [
+                "password"
+            ],
+            "description": "Данные входа: пароль обязателен, имя гостя — опционально."
+        },
+        "Meeting": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Meeting.json",
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Идентификатор, присваиваемый базой данных."
+                },
+                "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "description": "День встречи, 'YYYY-MM-DD'."
+                },
+                "time": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                    "description": "Начало встречи, 'HH:mm'."
+                }
+            },
+            "required": [
+                "id",
+                "date",
+                "time"
+            ],
+            "description": "Запись на встречу. Дата и время — строки в том формате, в котором их отдаёт\nMantine: 'YYYY-MM-DD' и 'HH:mm'. Строки, а не Date, ещё и потому, что\nnew Date('YYYY-MM-DD') разбирается как полночь UTC и в отрицательных\nчасовых поясах показывает предыдущий день."
+        },
+        "MeetingDraft": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "MeetingDraft.json",
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "description": "День встречи, 'YYYY-MM-DD'."
+                },
+                "time": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                    "description": "Начало встречи, 'HH:mm'."
+                },
+                "meeting_type_id": {
+                    "type": "string",
+                    "description": "Тип встречи. Если поле передано — тип обязан существовать и быть активным,\nиначе 400 (S5, C1); без поля запись создаётся «нетипизированной», как\nлегаси-строки C5 (гостевой флоу F7 всегда передаёт тип). Формат — строка:\nне-строка отклоняется схемой как 400, а несуществующая строка — проверкой\nцелостности в роуте."
+                }
+            },
+            "required": [
+                "date",
+                "time"
+            ],
+            "description": "Данные новой записи — всё, кроме идентификатора; booker сюда не входит."
+        },
+        "DateRange": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "DateRange.json",
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "description": "День начала, включительно, 'YYYY-MM-DD'."
+                },
+                "to": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "description": "День конца, включительно, 'YYYY-MM-DD'."
+                }
+            },
+            "required": [
+                "from",
+                "to"
+            ],
+            "description": "Полуинтервал дат для запроса списка записей, обе границы включительно."
+        },
+        "MeetingType": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "MeetingType.json",
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Идентификатор, присваиваемый базой данных."
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Название типа — непустая строка."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Описание типа."
+                },
+                "active": {
+                    "type": "boolean",
+                    "description": "Активен ли тип: деактивированный нельзя выбрать при новой записи (Q7)."
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "active"
+            ],
+            "description": "Тип встречи, предлагаемый администратором (Q2). Длительность не моделируется —\nна сетку слотов она не влияет. Удаления нет: деактивация — единственный конец\nжизненного цикла (Q7)."
+        },
+        "MeetingTypeDraft": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "MeetingTypeDraft.json",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "description": "Название типа — непустая строка, минимум один непробельный символ: `'   '`\nне проходит, хотя с одним лишь `@minLength(1)` прошло бы (тот же приём,\nчто у `LoginInput.password`, K4)."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Описание типа."
+                }
+            },
+            "required": [
+                "name",
+                "description"
+            ],
+            "description": "Данные нового типа встречи — всё, кроме идентификатора и признака активности."
+        },
+        "PlannedMeeting": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "PlannedMeeting.json",
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "description": "День встречи, 'YYYY-MM-DD'."
+                },
+                "time": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                    "description": "Начало встречи, 'HH:mm'."
+                },
+                "type": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Название типа встречи; null у старой записи без типа."
+                },
+                "booker": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Имя записавшегося; null у старой записи без booker."
+                }
+            },
+            "required": [
+                "date",
+                "time",
+                "type",
+                "booker"
+            ],
+            "description": "Строка админского списка запланированных встреч: LEFT JOIN, поэтому у старых\n«нетипизированных» записей `type` и `booker` равны null (C5)."
+        },
+        "ErrorResponse": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "ErrorResponse.json",
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "error"
+            ],
+            "description": "Форма всех ошибок API: русское описание уходит клиенту как есть."
+        },
+        "OkSession": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "OkSession.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 200
+                },
+                "session": {
+                    "$ref": "Session.json"
+                }
+            },
+            "required": [
+                "_",
+                "session"
+            ]
+        },
+        "OkMeetingList": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "OkMeetingList.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 200
+                },
+                "meetings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "Meeting.json"
+                    }
+                }
+            },
+            "required": [
+                "_",
+                "meetings"
+            ]
+        },
+        "OkMeetingTypeList": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "OkMeetingTypeList.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 200
+                },
+                "meetingTypes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "MeetingType.json"
+                    }
+                }
+            },
+            "required": [
+                "_",
+                "meetingTypes"
+            ]
+        },
+        "OkMeetingType": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "OkMeetingType.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 200
+                },
+                "meetingType": {
+                    "$ref": "MeetingType.json"
+                }
+            },
+            "required": [
+                "_",
+                "meetingType"
+            ]
+        },
+        "OkPlannedMeetingList": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "OkPlannedMeetingList.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 200
+                },
+                "meetings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "PlannedMeeting.json"
+                    }
+                }
+            },
+            "required": [
+                "_",
+                "meetings"
+            ],
+            "description": "Все запланированные встречи для админа (S4): сегодня и будущее, без горизонта."
+        },
+        "CreatedMeeting": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "CreatedMeeting.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 201
+                },
+                "meeting": {
+                    "$ref": "Meeting.json"
+                }
+            },
+            "required": [
+                "_",
+                "meeting"
+            ]
+        },
+        "CreatedMeetingType": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "CreatedMeetingType.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 201
+                },
+                "meetingType": {
+                    "$ref": "MeetingType.json"
+                }
+            },
+            "required": [
+                "_",
+                "meetingType"
+            ]
+        },
+        "NoContent": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "NoContent.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 204
+                }
+            },
+            "required": [
+                "_"
+            ]
+        },
+        "BadRequest": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "BadRequest.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 400
+                },
+                "error": {
+                    "$ref": "ErrorResponse.json"
+                }
+            },
+            "required": [
+                "_",
+                "error"
+            ]
+        },
+        "Unauthorized": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Unauthorized.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 401
+                },
+                "error": {
+                    "$ref": "ErrorResponse.json"
+                }
+            },
+            "required": [
+                "_",
+                "error"
+            ]
+        },
+        "Forbidden": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Forbidden.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 403
+                },
+                "error": {
+                    "$ref": "ErrorResponse.json"
+                }
+            },
+            "required": [
+                "_",
+                "error"
+            ],
+            "description": "Нет прав: сессия есть, но роль не admin (T2)."
+        },
+        "Conflict": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Conflict.json",
+            "type": "object",
+            "properties": {
+                "_": {
+                    "type": "number",
+                    "const": 409
+                },
+                "error": {
+                    "$ref": "ErrorResponse.json"
+                }
+            },
+            "required": [
+                "_",
+                "error"
+            ]
+        }
+    }
+}
