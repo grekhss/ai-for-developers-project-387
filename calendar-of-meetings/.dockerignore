@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+dist
+dist-server
+tsp-output
+data
+*.sqlite
+*.log
+.env
+.env.*
+!.env.example
+coverage
+.vite
+.DS_Store

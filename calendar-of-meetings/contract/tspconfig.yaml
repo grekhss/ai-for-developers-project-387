@@ -1,0 +1,15 @@
+emit:
+  - "@typespec/openapi3"
+  - "@typespec/json-schema"
+
+options:
+  "@typespec/openapi3":
+    output-file: openapi.yaml
+  "@typespec/json-schema":
+    # Все модели спеки, а не только помеченные @jsonSchema: сервер валидирует
+    # формат тела и query по ним (K4). seal-object-schemas остаётся выключенным
+    # (по умолчанию false) — дополнительные поля разрешены, как и раньше.
+    emitAllModels: true
+    # Один документ с $defs вместо файла на модель: bundleId же задаёт имя файла.
+    bundleId: calendar-of-meetings
+    file-type: json
