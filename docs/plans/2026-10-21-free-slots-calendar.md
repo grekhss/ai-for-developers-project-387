@@ -6,14 +6,68 @@
 - **Область:** фронтенд. `contract/main.tsp`, `server/`, БД и `SCHEMA_VERSION` не меняются.
 - **Связанный issue:** [#1 «Не могу записаться на встречу и не понимаю почему»](https://github.com/grekhss/ai-for-developers-project-387/issues/1) — закрывается частью 2.
 
-План из двух частей, обе расширяют возможности **Гостя** (терминология
+План из трёх частей. Часть 0 — подготовительная, её делают **до** начала
+разработки; части 1 и 2 расширяют возможности **Гостя** (терминология
 `GLOSSARY.md`):
 
+0. **Подготовка трекера и документации** — убрать ссылку на устаревшее issue
+   предыдущего проекта и завести лейблы триажа.
 1. **Календарь со свободными слотами + ручное обновление** — гость видит
    занятость дней до того, как кликнет по дню, и умеет перечитать список
    записей, пока страница открыта.
 2. **Понятное пустое состояние** — гость, у которого нет активных типов
    встреч, понимает, почему запись недоступна и что делать (issue #1).
+
+## Часть 0: подготовительные правки (сделать до разработки)
+
+Мелкие правки, которые не относятся к самой фиче, но должны быть сделаны
+раньше неё. Пока `AGENTS.md` указывает на чужой трекер, любая работа с
+`gh` из этого репозитория ведёт не туда, а issue #1 нечем пометить по
+правилам `docs/agents/triage-labels.md`.
+
+### 0.1. Убрать ссылку на устаревшее issue предыдущего проекта
+
+`calendar-of-meetings/AGENTS.md:574` сейчас говорит:
+
+> Issues live in GitHub Issues (`grekhss/ai-for-developers-project-386`), driven by the `gh` CLI.
+
+Проект переехал (`605bb70 Migrate application from previous repository`), и
+remote теперь — `grekhss/ai-for-developers-project-387`. В ссылке должно
+быть 387.
+
+Второе место, где старая ссылка ещё живёт: в самом
+`grekhss/ai-for-developers-project-386` остался открытый issue #1 «There is
+no authentication» с лейблом `ready-for-agent`. Он не про «сделать», а про
+«уже сделано и уехало в другой репозиторий» — аутентификация реализована
+(S2, F2, K1 закрыты там же). Он вводит в заблуждение каждого, кто заглянет
+в старый трекер, поэтому закрыть его комментарием «работа перенесена в
+grekhss/ai-for-developers-project-387» и снять лейбл.
+
+**Что не трогаем:** историческую ссылку на ticket #5 в
+`docs/research/D3-httpOnly-session-cookie-vite-proxy.md:3` — это отчёт о
+проделанной работе, а не указатель на живой трекер; менять её нельзя.
+
+### 0.2. Завести лейблы триажа
+
+`docs/agents/triage-labels.md` описывает пять ролей, из которых в трекере 387
+есть только `wontfix` (дефолтный GitHub-лейбл). Остальные создаём — имена
+должны совпадать с таблицей в `docs/agents/triage-labels.md`:
+
+```bash
+gh label create needs-triage   --color "ededed" --description "Maintainer needs to evaluate this issue"
+gh label create needs-info      --color "fbca04" --description "Waiting on reporter for more information"
+gh label create ready-for-agent --color "0e8a16" --description "Fully specified, ready for an AFK agent"
+gh label create ready-for-human --color "1d76db" --description "Requires human implementation"
+```
+
+Цвета произвольные — важны имена.
+
+### 0.3. Приёмка части 0
+
+- `calendar-of-meetings/AGENTS.md` указывает на `grekhss/ai-for-developers-project-387`;
+- в 386 issue #1 закрыт, в 387 открыт ровно один issue — наш #1;
+- в 387 есть все четыре лейбла из `docs/agents/triage-labels.md`;
+- код приложения не тронут: только `AGENTS.md` и операции GitHub.
 
 ## Мотивация: чего гость не может сегодня
 
@@ -205,14 +259,9 @@ freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, 
 **2.3. Issue** — после реализации закрыть [#1](https://github.com/grekhss/ai-for-developers-project-387/issues/1)
 комментарием со ссылкой на коммит (операции GitHub — по команде пользователя).
 
-**2.4. Сопутствующая правка документации (отдельным изменением, по желанию)** —
-в `calendar-of-meetings/AGENTS.md` ссылка «Issues live in GitHub Issues
-(grekhss/ai-for-developers-project-386)» устарела: трекер сейчас
-`grekhss/ai-for-developers-project-387` (remote репозитория), а в 386 открыт
-только давно решённый #1 «There is no authentication» — аутентификация
-реализована (S2/F2/K1 закрыты там же). Там же стоит создать лейблы
-`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` из
-`docs/agents/triage-labels.md` — в 387 есть только дефолтные GitHub-лейблы.
+**2.4. Сопутствующие правки документации** — перенесены в часть 0 (§0.1–0.2):
+правка ссылки на трекер в `AGENTS.md` и создание лейблов триажа делаются
+до начала разработки, отдельным изменением.
 
 ## Инварианты, которые нельзя задеть
 
