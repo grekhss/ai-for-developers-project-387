@@ -569,7 +569,7 @@ don't assume any CSS beyond Mantine's stylesheets.
 
 ### Issue tracker
 
-Issues live in GitHub Issues (`grekhss/ai-for-developers-project-386`), driven by the `gh` CLI. See `docs/agents/issue-tracker.md` (at the git repo root).
+Issues live in GitHub Issues (`grekhss/ai-for-developers-project-387`), driven by the `gh` CLI. See `docs/agents/issue-tracker.md` (at the git repo root).
 
 ### Triage labels
 
