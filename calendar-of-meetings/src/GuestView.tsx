@@ -7,6 +7,16 @@ import { useMeetingTypes } from './hooks/useMeetingTypes.ts';
 import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
 import { formatDateRu } from './lib/date.ts';
+import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
+
+type MeetingTypesState = 'loading' | 'error' | 'empty' | 'ready';
+
+function meetingTypesState(loading: boolean, error: string | null, count: number): MeetingTypesState {
+  if (loading) return 'loading';
+  if (error !== null) return 'error';
+  if (count === 0) return 'empty';
+  return 'ready';
+}
 
 interface GuestViewProps {
   /** Подменяется в тестах, чтобы не делить записи между сценариями. */
@@ -46,6 +56,7 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
     .filter((meeting) => meeting.date === selectedDate)
     .map((meeting) => meeting.time);
   const readyToConfirm = selectedType !== null && selectedDate !== null && time !== null;
+  const typesState = meetingTypesState(typesLoading, typesError, meetingTypes.length);
 
   // Смена любого выбора гасит строку успеха: она описывает прежнюю запись.
   function selectType(id: string) {
@@ -93,12 +104,21 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
         <Alert color="red" mb="md">{error ?? typesError}</Alert>
       )}
 
-      {typesLoading ? (
-        <Text c="dimmed">Загрузка типов встреч…</Text>
-      ) : meetingTypes.length === 0 ? (
-        // Активных типов нет — записываться не на что (D4: пустые состояния — тексты).
-        <Text c="dimmed">Запись сейчас недоступна</Text>
-      ) : (
+      {typesState === 'loading' && <Text c="dimmed">Загрузка типов встреч…</Text>}
+
+      {typesState === 'empty' && (
+        // Активных типов нет — записываться не на что; объясняем причину и кто
+        // её устранит (D4: пустые состояния — тексты). При ошибке загрузки
+        // выше уже есть Alert, второго сообщения не дублируем.
+        <Stack gap={4}>
+          <Text c="dimmed">{NO_MEETING_TYPES_TITLE}</Text>
+          <Text size="sm" c="dimmed">
+            {NO_MEETING_TYPES_HINT}
+          </Text>
+        </Stack>
+      )}
+
+      {typesState === 'ready' && (
         // Назад — только на пройденные шаги: allowNextStepsSelect выключен,
         // иначе гость прыгнул бы на «Готово» без даты и времени.
         <Stepper active={step} onStepClick={setStep} allowNextStepsSelect={false}>
