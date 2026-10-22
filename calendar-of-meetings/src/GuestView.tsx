@@ -8,6 +8,11 @@ import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
 import { formatDateRu } from './lib/date.ts';
 
+/** Тексты пустого состояния: экспортируются, чтобы тесты не расходились с UI. */
+export const NO_MEETING_TYPES_TITLE = 'Активных типов встреч пока нет';
+export const NO_MEETING_TYPES_HINT =
+  'Запись в календаре откроется, как только администратор создаст хотя бы один тип встречи.';
+
 interface GuestViewProps {
   /** Подменяется в тестах, чтобы не делить записи между сценариями. */
   api?: MeetingsApi;
@@ -100,9 +105,9 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
         // её устранит (D4: пустые состояния — тексты). При ошибке загрузки
         // выше уже есть Alert, второго сообщения не дублируем.
         <Stack gap={4}>
-          <Text c="dimmed">Активных типов встреч пока нет</Text>
+          <Text c="dimmed">{NO_MEETING_TYPES_TITLE}</Text>
           <Text size="sm" c="dimmed">
-            Запись откроется, как только администратор создаст хотя бы один тип встречи.
+            {NO_MEETING_TYPES_HINT}
           </Text>
         </Stack>
       ) : (
