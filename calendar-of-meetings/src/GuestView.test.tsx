@@ -3,7 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
-import GuestView, { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './GuestView.tsx';
+import GuestView from './GuestView.tsx';
+import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 import { createInMemoryMeetingsApi } from './lib/meetings/inMemory.ts';
 import type { MeetingsApi } from './lib/meetings/api.ts';
 import type { Meeting } from './lib/meetings/types.ts';
@@ -142,8 +143,8 @@ describe('гостевой вид', () => {
   it('нет активных типов — причина и кто её устранит вместо степпера', async () => {
     await renderGuestView(createInMemoryMeetingsApi(), typesApi([]));
 
-    expect(screen.getByText(NO_MEETING_TYPES_TITLE)).toBeInTheDocument();
-    expect(screen.getByText(NO_MEETING_TYPES_HINT)).toBeInTheDocument();
+    expect(screen.getByText('Активных типов встреч пока нет')).toBeInTheDocument();
+    expect(screen.getByText(/откроется, как только администратор/)).toBeInTheDocument();
     expect(screen.queryByText('Запись сейчас недоступна')).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
@@ -157,6 +158,7 @@ describe('гостевой вид', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Не удалось получить список типов встреч.'
     );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.queryByText(NO_MEETING_TYPES_TITLE)).not.toBeInTheDocument();
     expect(screen.queryByText(NO_MEETING_TYPES_HINT)).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
