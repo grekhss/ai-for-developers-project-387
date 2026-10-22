@@ -139,15 +139,21 @@ describe('гостевой вид', () => {
     expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();
   });
 
-  it('нет активных типов — «Запись сейчас недоступна» вместо степпера', async () => {
+  it('нет активных типов — причина и кто её устранит вместо степпера', async () => {
     await renderGuestView(createInMemoryMeetingsApi(), typesApi([]));
 
-    expect(screen.getByText('Запись сейчас недоступна')).toBeInTheDocument();
+    expect(screen.getByText('Активных типов встреч пока нет')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Запись откроется, как только администратор создаст хотя бы один тип встречи.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Запись сейчас недоступна')).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
 
-  it('ошибка загрузки типов — красный Alert, степпера нет', async () => {
+  it('ошибка загрузки типов — только красный Alert, без текста об отсутствии типов', async () => {
     const failing: MeetingTypesApi = { ...typesApi(), list: () => Promise.reject(new Error('нет связи')) };
 
     await renderGuestView(createInMemoryMeetingsApi(), failing);
@@ -155,6 +161,12 @@ describe('гостевой вид', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Не удалось получить список типов встреч.'
     );
+    expect(screen.queryByText('Активных типов встреч пока нет')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Запись откроется, как только администратор создаст хотя бы один тип встречи.'
+      )
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
   });
 
