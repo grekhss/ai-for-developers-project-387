@@ -31,3 +31,12 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} # имя секрета зависит от провайдера в model
         with:
           model: opencode/big-pickle
+
+      - uses: anomalyco/opencode/github@latest
+        with:
+          model: opencode/big-pickle
+          prompt: |
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs
+            - Suggest improvements
