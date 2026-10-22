@@ -95,9 +95,16 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
 
       {typesLoading ? (
         <Text c="dimmed">Загрузка типов встреч…</Text>
-      ) : meetingTypes.length === 0 ? (
-        // Активных типов нет — записываться не на что (D4: пустые состояния — тексты).
-        <Text c="dimmed">Запись сейчас недоступна</Text>
+      ) : typesError !== null ? null : meetingTypes.length === 0 ? (
+        // Активных типов нет — записываться не на что; объясняем причину и кто
+        // её устранит (D4: пустые состояния — тексты). При ошибке загрузки
+        // выше уже есть Alert, второго сообщения не дублируем.
+        <Stack gap={4}>
+          <Text c="dimmed">Активных типов встреч пока нет</Text>
+          <Text size="sm" c="dimmed">
+            Запись откроется, как только администратор создаст хотя бы один тип встречи.
+          </Text>
+        </Stack>
       ) : (
         // Назад — только на пройденные шаги: allowNextStepsSelect выключен,
         // иначе гость прыгнул бы на «Готово» без даты и времени.
