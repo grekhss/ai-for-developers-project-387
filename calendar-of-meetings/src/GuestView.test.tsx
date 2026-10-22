@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
-import GuestView from './GuestView.tsx';
+import GuestView, { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './GuestView.tsx';
 import { createInMemoryMeetingsApi } from './lib/meetings/inMemory.ts';
 import type { MeetingsApi } from './lib/meetings/api.ts';
 import type { Meeting } from './lib/meetings/types.ts';
@@ -142,12 +142,8 @@ describe('гостевой вид', () => {
   it('нет активных типов — причина и кто её устранит вместо степпера', async () => {
     await renderGuestView(createInMemoryMeetingsApi(), typesApi([]));
 
-    expect(screen.getByText('Активных типов встреч пока нет')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Запись в календаре откроется, как только администратор создаст хотя бы один тип встречи.'
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText(NO_MEETING_TYPES_TITLE)).toBeInTheDocument();
+    expect(screen.getByText(NO_MEETING_TYPES_HINT)).toBeInTheDocument();
     expect(screen.queryByText('Запись сейчас недоступна')).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
@@ -161,12 +157,8 @@ describe('гостевой вид', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Не удалось получить список типов встреч.'
     );
-    expect(screen.queryByText('Активных типов встреч пока нет')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        'Запись откроется, как только администратор создаст хотя бы один тип встречи.'
-      )
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(NO_MEETING_TYPES_TITLE)).not.toBeInTheDocument();
+    expect(screen.queryByText(NO_MEETING_TYPES_HINT)).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
   });
 
