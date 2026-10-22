@@ -145,7 +145,7 @@ describe('гостевой вид', () => {
     expect(screen.getByText('Активных типов встреч пока нет')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Запись откроется, как только администратор создаст хотя бы один тип встречи.'
+        'Запись в календаре откроется, как только администратор создаст хотя бы один тип встречи.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByText('Запись сейчас недоступна')).not.toBeInTheDocument();
