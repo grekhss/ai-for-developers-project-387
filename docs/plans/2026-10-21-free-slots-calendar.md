@@ -2,7 +2,7 @@
 
 - **Дата:** 2026-10-21
 - **Пакет:** `calendar-of-meetings`
-- **Статус:** Part 2 смержена (PR #2); Part 0 закрыта; Part 1 не начата
+- **Статус:** Part 2 смержена (PR #2); Part 0 закрыта; Part 1 реализована в ветке `feat/guest-free-slots`
 - **Область:** фронтенд. `contract/main.tsp`, `server/`, БД и `SCHEMA_VERSION` не меняются.
 - **Связанный issue:** [#1 «Не могу записаться на встречу и не понимаю почему»](https://github.com/grekhss/ai-for-developers-project-387/issues/1) — закрывается частью 2.
 

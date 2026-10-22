@@ -149,8 +149,10 @@ npm 10 locally.
 - Mantine days are `<button>`s carrying `data-selected` / `data-today` /
   `data-outside`. Query those, not day text — numbers repeat across outside
   days, so `getByText('1')` is ambiguous. `data-today` is unique and is the
-  stable click target. Each day also gets a localized default
-  `aria-label` ("3 октября 2026") computed in `Month.mjs`.
+  stable click target. Each day gets a localized `aria-label`: "3 октября 2026",
+  а у дня с известным счётчиком — "3 октября 2026 — свободно 5". Такие дни
+  дополнительно несут `data-free-count` и `title="свободно N"`; дни без данных
+  о занятости подписаны как раньше.
 - **Mantine v9 throws without `MantineProvider` in the tree** ("MantineProvider
   was not found in component tree") — every render test must wrap the component
   it renders. `DatesProvider` is only needed for date widgets that read locale
@@ -167,8 +169,8 @@ npm 10 locally.
   "undefined and string is invalid for this assertion" instead of a null check.
 - **Assert the locale from day `aria-label`s, not from the header text.**
   The header shows the *current* month, so a test asserting "октября" passes in
-  October and fails in November. `/^\d{1,2} [а-яё]+ \d{4}$/` proves Russian
-  locale in any month.
+  October and fails in November. `/^\d{1,2} [а-яё]+ \d{4}( — свободно \d+)?$/`
+  proves Russian locale in any month.
 - **`App` takes optional `api`, `typesApi`, `plannedApi` and `sessionApi` props,
   and all four are load-bearing in tests.** `lib/meetings/api.ts` exports a module-level
   singleton, so without
@@ -555,11 +557,14 @@ the copies if you touch the fake.
 
 **Tests must not assume "today is selectable."** Past days and weekends are
 disabled by `isBookableDay` (будни в пределах гостевого окна Q5 — 14 дней от
-«сейчас»), so `[data-today]` is unclickable whenever today falls
-on a weekend (and it was, on 2026-10-03). Select "the first enabled day of the
-displayed month" (`tbody button:not([disabled])` without `data-outside`) instead,
-and page to the next month via `[data-direction="next"]` when the current one has
-none left. Assert on `disabled` for rule checks rather than on dates.
+«сейчас»), а полностью занятый день выключается счётчиком свободных слотов, так
+что `[data-today]` может быть недоступен и в будний день — например, вечером.
+Select "the first enabled day of the displayed month"
+(`tbody button:not([disabled])` without `data-outside`) instead, and page to the
+next month via `[data-direction="next"]` when the current one has none left.
+Сценарии с конкретным временем (`11:00`) берите на будущем буднем дне: у
+сегодняшнего к вечеру свободных слотов не остаётся. Assert on `disabled` for
+rule checks rather than on dates.
 
 `src/App.css`, `src/index.css`, `src/assets/`, and `public/icons.svg` were dead
 Vite-starter leftovers and have since been deleted — don't reintroduce them, and
