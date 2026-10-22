@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Alert, Button, Radio, Stack, Stepper, Text } from '@mantine/core';
+import { Alert, Button, Group, Radio, Stack, Stepper, Text } from '@mantine/core';
 import MeetingCalendar from './components/MeetingCalendar.tsx';
 import TimeSlots from './components/TimeSlots.tsx';
 import { useMeetings } from './hooks/useMeetings.ts';
 import { useMeetingTypes } from './hooks/useMeetingTypes.ts';
 import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
-import { formatDateRu } from './lib/date.ts';
+import { formatDateRu, now } from './lib/date.ts';
+import { takenTimesByDay } from './lib/availability.ts';
 import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 
 type MeetingTypesState = 'loading' | 'error' | 'empty' | 'ready';
@@ -48,9 +49,15 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [lastBooked, setLastBooked] = useState<BookedSummary | null>(null);
-  const { meetings, loading, error, createMeeting } = useMeetings(api);
+  const { meetings, loading, error, refresh, createMeeting } = useMeetings(api);
   const { meetingTypes, loading: typesLoading, error: typesError } = useMeetingTypes(typesApi);
 
+  // Одно «сейчас» на рендер: календарь и счётчики должны считать одинаково.
+  const moment = now();
+  // Счётчики — только по достоверным данным: при загрузке `meetings` пуст, а
+  // при ошибке список неполон, и «0 свободных» выключило бы весь месяц.
+  const takenByDay =
+    !loading && error === null ? takenTimesByDay(meetings) : undefined;
   const selectedType = meetingTypes.find((type) => type.id === typeId) ?? null;
   const takenTimes = meetings
     .filter((meeting) => meeting.date === selectedDate)
@@ -142,7 +149,25 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
           </Stepper.Step>
 
           <Stepper.Step label="Время">
-            <MeetingCalendar value={selectedDate} onSelect={selectDate} />
+            <MeetingCalendar
+              value={selectedDate}
+              onSelect={selectDate}
+              takenTimesByDay={takenByDay}
+              moment={moment}
+            />
+
+            {/* Список прочитан один раз при монтировании; кнопка даёт гостю
+                увидеть чужие записи, не перезагружая страницу. */}
+            <Group justify="flex-end" mt="xs">
+              <Button
+                variant="subtle"
+                size="xs"
+                disabled={loading}
+                onClick={() => { void refresh(); }}
+              >
+                Обновить
+              </Button>
+            </Group>
 
             {selectedDate === null ? (
               <Text mt="md" c="dimmed">Выберите дату, чтобы посмотреть свободные слоты.</Text>

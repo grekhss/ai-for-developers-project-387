@@ -58,18 +58,44 @@ function bookableDays(container: HTMLElement): HTMLButtonElement[] {
   ));
 }
 
-/** Открывает первый доступный день и возвращает его aria-label. */
+/** Кнопка дня по точному aria-label; при необходимости листает на месяц вперёд. */
+async function findDayCell(
+  user: ReturnType<typeof userEvent.setup>,
+  container: HTMLElement,
+  label: string,
+): Promise<HTMLButtonElement | null> {
+  const find = () =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+
+  let cell = find();
+  if (cell === null) {
+    const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
+    expect(next).not.toBeNull();
+    await user.click(next as HTMLButtonElement);
+    cell = find();
+  }
+
+  return cell;
+}
+
+/** Открывает первый доступный день после сегодняшнего и возвращает его
+ * aria-label. Сегодня не берём: к вечеру у него не остаётся свободных слотов,
+ * и сценарии с конкретным временем становились бы зависимыми от часов.
+ */
 async function openFirstBookableDay(
   user: ReturnType<typeof userEvent.setup>,
   container: HTMLElement,
 ): Promise<string> {
-  let days = bookableDays(container);
+  const futureEnabledDays = () =>
+    bookableDays(container).filter((day) => !day.hasAttribute('data-today'));
+
+  let days = futureEnabledDays();
 
   if (days.length === 0) {
     const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
     expect(next).not.toBeNull();
     await user.click(next as HTMLButtonElement);
-    days = bookableDays(container);
+    days = futureEnabledDays();
   }
 
   expect(days.length).toBeGreaterThan(0);
@@ -83,18 +109,20 @@ async function openFirstBookableDay(
 }
 
 /**
- * Первый bookable-день ровно тем же правилом, что календарь (isBookableDay):
- * тесты сеют занятые слоты в конкретные даты, а не парсят aria-label.
+ * Первый bookable-день после сегодняшнего ровно тем же правилом, что календарь
+ * (isBookableDay): тесты сеют занятые слоты в конкретные даты, а не парсят
+ * aria-label. Завтрашний будний день всегда полон слотов — в отличие от
+ * сегодняшнего, у которого к вечеру свободных слотов нет.
  */
-function firstBookableDate(): string {
+function nextBookableDate(): string {
   const moment = now();
 
-  for (let offset = 0; offset < 14; offset++) {
+  for (let offset = 1; offset < 14; offset++) {
     const day = addDays(today(), offset);
     if (isBookableDay(day, moment)) return day;
   }
 
-  throw new Error('в гостевом окне нет ни одного буднего дня');
+  throw new Error('в гостевом окне нет буднего дня после сегодняшнего');
 }
 
 /** Проходит шаг «Тип»: выбирает первый тип и жмёт «Далее». */
@@ -188,7 +216,11 @@ describe('гостевой вид', () => {
 
     const labels = Array.from(container.querySelectorAll('tbody button'))
       .map((day) => day.getAttribute('aria-label') ?? '');
-    expect(labels.some((label) => /^\d{1,2} [а-яё]+ \d{4}$/.test(label))).toBe(true);
+    expect(
+      labels.some((label) => /^\d{1,2} [а-яё]+ \d{4}( — свободно \d+)?$/.test(label))
+    ).toBe(true);
+    // Счётчики свободных слотов подписаны и в доступном имени дня.
+    expect(labels.some((label) => / — свободно \d+$/.test(label))).toBe(true);
 
     const weekdays = Array.from(container.querySelectorAll('.mantine-DatePicker-weekday'))
       .map((cell) => cell.textContent ?? '');
@@ -207,7 +239,7 @@ describe('гостевой вид', () => {
 
   it('выбранный день показывает сетку слотов; занятый слот выключен', async () => {
     const user = userEvent.setup();
-    const api = createInMemoryMeetingsApi([{ id: '1', date: firstBookableDate(), time: '11:00' }]);
+    const api = createInMemoryMeetingsApi([{ id: '1', date: nextBookableDate(), time: '11:00' }]);
     const { container } = await renderGuestView(api);
     await pickTypeAndNext(user);
 
@@ -220,7 +252,7 @@ describe('гостевой вид', () => {
 
   it('занятый слот другого дня не выключает слоты выбранного', async () => {
     const user = userEvent.setup();
-    const date = firstBookableDate();
+    const date = nextBookableDate();
     const api = createInMemoryMeetingsApi([{ id: '1', date: addDays(date, 1), time: '11:00' }]);
     const { container } = await renderGuestView(api);
     await pickTypeAndNext(user);
@@ -230,22 +262,63 @@ describe('гостевой вид', () => {
     expect(screen.getByRole('button', { name: '11:00' })).toBeEnabled();
   });
 
-  it('в дне не осталось свободных слотов — явный текст вместо сетки', async () => {
+  it('в дне не осталось свободных слотов — день выключен в календаре', async () => {
     const user = userEvent.setup();
-    const date = firstBookableDate();
+    const date = nextBookableDate();
     const booked: Meeting[] = SLOTS.map((time, index) => ({ id: String(index + 1), date, time }));
     const { container } = await renderGuestView(createInMemoryMeetingsApi(booked));
     await pickTypeAndNext(user);
 
+    const label = `${formatDateRu(date)} — свободно 0`;
+    const cell = await findDayCell(user, container, label);
+
+    expect(cell).not.toBeNull();
+    expect(cell).toBeDisabled();
+    expect(cell).toHaveAttribute('aria-label', label);
+    // До слотов дело не доходит: занятый день даже не выбирается.
+    expect(screen.queryByText('На этот день свободных слотов нет')).not.toBeInTheDocument();
+  });
+
+  it('счётчик свободных слотов виден в календаре', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    const api = createInMemoryMeetingsApi([{ id: '1', date, time: '11:00' }]);
+    const { container } = await renderGuestView(api);
+    await pickTypeAndNext(user);
+
+    const label = `${formatDateRu(date)} — свободно 17`;
+    const cell = await findDayCell(user, container, label);
+
+    expect(cell).not.toBeNull();
+    expect(cell).toBeEnabled();
+    expect(cell).toHaveAttribute('aria-label', label);
+    expect(cell).toHaveTextContent('17');
+  });
+
+  it('«Обновить» перечитывает записи и выключает занятый слот', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    let calls = 0;
+    const api: MeetingsApi = {
+      list: () => Promise.resolve(calls++ === 0 ? [] : [{ id: '1', date, time: '11:00' }]),
+      create: () => Promise.reject(new Error('не должен вызываться')),
+    };
+    const { container } = await renderGuestView(api);
+    await pickTypeAndNext(user);
     await openFirstBookableDay(user, container);
 
-    expect(screen.getByText('На этот день свободных слотов нет')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '11:00' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Обновить' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '11:00' })).toBeDisabled();
+    });
   });
 
   it('«Далее» в подтверждение доступно только со слотом; сводка тип/дата/время', async () => {
     const user = userEvent.setup();
-    const date = firstBookableDate();
+    const date = nextBookableDate();
     const { container } = await renderGuestView();
     await pickTypeAndNext(user);
     await openFirstBookableDay(user, container);
@@ -262,7 +335,7 @@ describe('гостевой вид', () => {
 
   it('запись уходит с выбранным типом и показывает синий Alert', async () => {
     const user = userEvent.setup();
-    const date = firstBookableDate();
+    const date = nextBookableDate();
     const api = createInMemoryMeetingsApi();
     const create = vi.spyOn(api, 'create');
     const { container } = await renderGuestView(api);
@@ -388,6 +461,25 @@ describe('гостевой вид', () => {
 
     expect(screen.getByText('Загрузка записей…')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();
+    // Пока данные не пришли, пустой список не превращается в «0 свободных».
+    expect(container.querySelector('button[data-free-count]')).toBeNull();
+  });
+
+  it('ошибка загрузки записей — без счётчиков и выключенных по занятости дней', async () => {
+    const user = userEvent.setup();
+    const failing: MeetingsApi = {
+      list: () => Promise.reject(new Error('нет связи')),
+      create: () => Promise.reject(new Error('не должен вызываться')),
+    };
+    const { container } = await renderGuestView(failing);
+    await pickTypeAndNext(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось получить список записей.'
+    );
+    // Данных нет — счётчики не считаются, календарь остаётся по правилу дня.
+    expect(container.querySelector('button[data-free-count]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Обновить' })).toBeEnabled();
   });
 
   it('пока типы грузятся — «Загрузка типов встреч…» вместо степпера', async () => {
