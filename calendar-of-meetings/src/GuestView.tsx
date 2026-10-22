@@ -7,11 +7,16 @@ import { useMeetingTypes } from './hooks/useMeetingTypes.ts';
 import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
 import { formatDateRu } from './lib/date.ts';
+import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 
-/** Тексты пустого состояния: экспортируются, чтобы тесты не расходились с UI. */
-export const NO_MEETING_TYPES_TITLE = 'Активных типов встреч пока нет';
-export const NO_MEETING_TYPES_HINT =
-  'Запись в календаре откроется, как только администратор создаст хотя бы один тип встречи.';
+type MeetingTypesState = 'loading' | 'error' | 'empty' | 'ready';
+
+function meetingTypesState(loading: boolean, error: string | null, count: number): MeetingTypesState {
+  if (loading) return 'loading';
+  if (error !== null) return 'error';
+  if (count === 0) return 'empty';
+  return 'ready';
+}
 
 interface GuestViewProps {
   /** Подменяется в тестах, чтобы не делить записи между сценариями. */
@@ -51,6 +56,7 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
     .filter((meeting) => meeting.date === selectedDate)
     .map((meeting) => meeting.time);
   const readyToConfirm = selectedType !== null && selectedDate !== null && time !== null;
+  const typesState = meetingTypesState(typesLoading, typesError, meetingTypes.length);
 
   // Смена любого выбора гасит строку успеха: она описывает прежнюю запись.
   function selectType(id: string) {
@@ -98,9 +104,9 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
         <Alert color="red" mb="md">{error ?? typesError}</Alert>
       )}
 
-      {typesLoading ? (
-        <Text c="dimmed">Загрузка типов встреч…</Text>
-      ) : typesError !== null ? null : meetingTypes.length === 0 ? (
+      {typesState === 'loading' && <Text c="dimmed">Загрузка типов встреч…</Text>}
+
+      {typesState === 'empty' && (
         // Активных типов нет — записываться не на что; объясняем причину и кто
         // её устранит (D4: пустые состояния — тексты). При ошибке загрузки
         // выше уже есть Alert, второго сообщения не дублируем.
@@ -110,7 +116,9 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
             {NO_MEETING_TYPES_HINT}
           </Text>
         </Stack>
-      ) : (
+      )}
+
+      {typesState === 'ready' && (
         // Назад — только на пройденные шаги: allowNextStepsSelect выключен,
         // иначе гость прыгнул бы на «Готово» без даты и времени.
         <Stepper active={step} onStepClick={setStep} allowNextStepsSelect={false}>
