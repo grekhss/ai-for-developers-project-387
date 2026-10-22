@@ -144,7 +144,11 @@ describe('гостевой вид', () => {
     await renderGuestView(createInMemoryMeetingsApi(), typesApi([]));
 
     expect(screen.getByText('Активных типов встреч пока нет')).toBeInTheDocument();
-    expect(screen.getByText(/откроется, как только администратор/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Запись в календаре откроется, как только администратор создаст хотя бы один тип встречи.'
+      )
+    ).toBeInTheDocument();
     expect(screen.queryByText('Запись сейчас недоступна')).not.toBeInTheDocument();
     expect(screen.queryByText('Тип')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
