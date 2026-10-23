@@ -75,8 +75,8 @@ gh label create ready-for-human --color "1d76db" --description "Requires human i
    `isBookableDay` (будни + гостевое окно Q5) и ничего не знает о занятости.
    Записи влияют на UI ровно в одном месте — `disableTime` в `TimeSlots`.
    Гость кликает день → видит сетку → если свободных слотов нет, читает «На
-   этот день свободных слотов нет» → идёт дальше. Это задокументированный
-   пробел `calendar-of-meetings/ARCHITECTURE.md` §7.1.
+   этот день свободных слотов нет» → идёт дальше. Это тот самый пробел,
+   который закрывает Part 1 (см. `calendar-of-meetings/ARCHITECTURE.md` §5).
 2. **Список нельзя обновить.** `useMeetings` читает данные один раз при
    монтировании; `refresh` хук возвращает (`src/hooks/useMeetings.ts:103`),
    но UI его не зовёт. Пока страница открыта, занятые слоты не появляются:
@@ -139,6 +139,7 @@ gh label create ready-for-human --color "1d76db" --description "Requires human i
 ```ts
 takenTimesByDay(meetings: Meeting[]): Record<string, string[]>
 freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, number>
+unavailableTimes(day: string, takenTimes: string[], moment: string): string[]
 ```
 
 - `takenTimesByDay` — занятые слоты по дням: `'YYYY-MM-DD' → ['HH:mm', …]`.
@@ -146,6 +147,9 @@ freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, 
   `isBookableDay`, для каждого считает `generateTimeSlots()` минус занятые
   минус слоты, запрещённые `isBookableSlot` (сегодня — только позже `moment`).
   Выходные и дни вне окна в карту не попадают: они и так `disabled`.
+- `unavailableTimes` — тот же список недоступного для `TimeSlots`: занятые плюс
+  уже начавшиеся сегодня. `freeSlotCounts` считает свободные как длину сетки
+  минус длину этого списка, поэтому счётчик и сетка не расходятся.
 
 ### 2. `src/lib/availability.test.ts` (новый)
 
@@ -153,12 +157,15 @@ freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, 
 - один занятый слот → 17;
 - «сегодня» при `moment = '2026-10-21 12:00'` → 11 (слоты ≤ 12:00 отсечены);
 - суббота и дни вне окна отсутствуют в карте;
-- заняты все слоты дня → 0.
+- заняты все слоты дня → 0;
+- `unavailableTimes` включает занятые и уже начавшиеся слоты, а на будущий день
+  оставляет только занятые.
 
 ### 3. `src/components/MeetingCalendar.tsx`
 
-- новые пропсы: `takenTimesByDay?: Record<string, string[]>` (компонент не знает
-  про `Meeting`) и `moment?: string` (по умолчанию `now()`);
+- новые пропсы: `freeCounts?: Record<string, number>` — готовая карта от
+  страницы (компонент не знает ни про `Meeting`, ни про расчёт занятости) — и
+  `moment?: string` (по умолчанию `now()`) для `excludeDate`;
 - `excludeDate`: `!isBookableDay(date, moment)` **или** счётчик известен и равен 0;
 - `getDayProps`: `data-free-count` и `title` («свободно N»); `selected` не трогаем;
 - `renderDay`: `Stack gap={0} align="center"` → `Text size="sm"` с числом дня и
@@ -180,22 +187,31 @@ freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, 
 
 ### 5. `src/GuestView.tsx`
 
-- `const moment = now()` один раз на рендер → в `MeetingCalendar` и в расчёт счётчиков;
-- счётчики считаются только при `!loading && error === null`, иначе `null` → «данных нет»;
-- кнопка «Обновить» (`variant="subtle" size="xs"`, `disabled={loading}`) зовёт
-  `refresh` из `useMeetings` — хук не меняем.
+- `const moment = now()` один раз на рендер → в расчёт счётчиков, `unavailableTimes` и `MeetingCalendar`;
+- `takenByDay = takenTimesByDay(meetings)` — единственный источник занятости;
+- `freeCounts = loaded ? freeSlotCounts(moment, takenByDay) : undefined`: счётчики
+  есть только после успешной загрузки, ошибка создания (409) их не гасит;
+- `TimeSlots` получает `unavailableTimes(selectedDate, takenTimes, moment)`, а
+  «Далее» дополнительно проверяет, что выбранное время не стало занятым;
+- кнопка «Обновить» (`variant="subtle" size="xs"`, `disabled={loading || refreshing}`)
+  зовёт `refresh` из `useMeetings`; хук даёт `refreshing` и номер последнего
+  запроса, чтобы старый ответ не перезаписал новый.
 
 ### 6. `src/GuestView.test.tsx`
 
 - «Обновить» перечитывает список (фейк отдаёт новую занятость → слот стал `disabled`);
+- «Обновить» делает уже выбранный, но ставший занятым слот непригодным для «Далее»;
 - счётчик свободных слотов виден в календаре;
-- полностью занятый день неактивен.
+- полностью занятый день неактивен;
+- после ошибки создания (409) счётчики остаются: список уже перечитан.
 
 ### 7. Документация
 
-- `calendar-of-meetings/ARCHITECTURE.md`: §7.1 («занятые дни не помечены») → пробел
-  закрыт; в §6 добавить новую точку расширения;
-- `calendar-of-meetings/AGENTS.md`: абзац про aria-label — под новый формат подписи.
+- `calendar-of-meetings/ARCHITECTURE.md`: §5 (расчёт занятости и согласованность
+  с `TimeSlots`), §6 (точки расширения), §3 (слой `availability.ts`); пункт
+  «занятые дни не помечены» из §7 удалён — пробел закрыт;
+- `calendar-of-meetings/AGENTS.md`: Layout (`availability.ts`, тестовый helper) и
+  абзац про aria-label — под новый формат подписи.
 
 ## Часть 2: пустое состояние, когда нет активных типов встреч
 
@@ -285,11 +301,11 @@ freeSlotCounts(moment: string, taken: Record<string, string[]>): Record<string, 
 ## Приёмка
 
 - `npm run check` — зелёный: `contract:check` без дрейфа, oxlint, `tsc -b` и
-  серверная типизация, все тесты (223 существующих + новые);
+  серверная типизация, все тесты (245: 223 существующих + 22 новых);
 - в `npm run dev`: в календаре видно число свободных слотов, полностью занятые
   дни неактивны, «Обновить» подтягивает чужие записи, выбранный день подсвечен;
-- вёрстку ячейки (число под датой) проверить визуально: если бейдж не влезает в
-  36px — откат на вариант «`title` + `data-free-count` + выключенные дни» без `renderDay`;
+- вёрстка ячейки (число под датой) проверена в headless Chrome: 36×36,
+  `scrollHeight` 36, содержимое 26px — вариант с `renderDay` остаётся;
 - гость без активных типов встреч видит причину («Активных типов встреч пока
   нет») и понимает, что делать; при ошибке загрузки типов на экране ровно одно
   сообщение;
