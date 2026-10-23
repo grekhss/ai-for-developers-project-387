@@ -6,15 +6,12 @@ import { DatesProvider } from '@mantine/dates';
 import dayjs from 'dayjs';
 import MeetingCalendar from './MeetingCalendar.tsx';
 import { APP_LOCALE, addDays, formatDateRu, now, today } from '../lib/date.ts';
-import { isBookableDay } from '../lib/window.ts';
-import { generateTimeSlots } from '../lib/slots.ts';
-
-const SLOTS = generateTimeSlots();
+import { nextBookableDate } from '../test/bookableDate.ts';
 
 function renderCalendar(
   props: {
     value?: string | null;
-    takenTimesByDay?: Record<string, string[]>;
+    freeCounts?: Record<string, number>;
     moment?: string;
   } = {},
 ) {
@@ -26,7 +23,7 @@ function renderCalendar(
         <MeetingCalendar
           value={props.value ?? null}
           onSelect={onSelect}
-          takenTimesByDay={props.takenTimesByDay}
+          freeCounts={props.freeCounts}
           moment={moment}
         />
       </DatesProvider>
@@ -34,16 +31,6 @@ function renderCalendar(
   );
 
   return { ...view, onSelect, moment };
-}
-
-/** Первый bookable-день окна после сегодняшнего — тем же правилом, что календарь. */
-function nextBookableDate(moment: string): string {
-  for (let offset = 1; offset < 14; offset++) {
-    const day = addDays(today(), offset);
-    if (isBookableDay(day, moment)) return day;
-  }
-
-  throw new Error('в гостевом окне нет буднего дня после сегодняшнего');
 }
 
 /**
@@ -87,7 +74,7 @@ describe('MeetingCalendar', () => {
     const user = userEvent.setup();
     const date = nextBookableDate(now());
     const { container } = renderCalendar({
-      takenTimesByDay: { [date]: SLOTS },
+      freeCounts: { [date]: 0 },
     });
 
     await showMonthOf(date, container, user);
@@ -101,7 +88,7 @@ describe('MeetingCalendar', () => {
     const user = userEvent.setup();
     const date = nextBookableDate(now());
     const { container } = renderCalendar({
-      takenTimesByDay: { [date]: ['11:00'] },
+      freeCounts: { [date]: 17 },
     });
 
     await showMonthOf(date, container, user);
@@ -110,6 +97,7 @@ describe('MeetingCalendar', () => {
     expect(cell).not.toBeNull();
     expect(cell).toBeEnabled();
     expect(cell).toHaveAttribute('title', 'свободно 17');
+    expect(cell).toHaveAttribute('data-free-count', '17');
 
     // Число дня и счётчик — обе строки внутри ячейки.
     const text = cell?.textContent ?? '';
@@ -122,7 +110,7 @@ describe('MeetingCalendar', () => {
     const date = nextBookableDate(now());
     const { container } = renderCalendar({
       value: date,
-      takenTimesByDay: { [date]: ['11:00'] },
+      freeCounts: { [date]: 17 },
     });
 
     await showMonthOf(date, container, user);
@@ -132,8 +120,9 @@ describe('MeetingCalendar', () => {
     expect(cell).toHaveAttribute('data-selected');
   });
 
-  it('выходные и прошедшие дни по-прежнему выключены', () => {
-    const { container } = renderCalendar({ takenTimesByDay: {} });
+  it('выходные и прошедшие дни по-прежнему выключены', async () => {
+    const user = userEvent.setup();
+    const { container } = renderCalendar({ freeCounts: {} });
 
     const weekend = gridDates()
       .map((date) => ({ date, label: formatDateRu(date) }))
@@ -144,35 +133,35 @@ describe('MeetingCalendar', () => {
     expect(weekendCell).not.toBeNull();
     expect(weekendCell).toBeDisabled();
 
+    // Вчерашний день может быть в хвосте прошлого месяца: если в текущей сетке
+    // его нет, листаем на месяц назад, а не предполагаем разметку.
     const yesterday = addDays(today(), -1);
-    const pastCell = dayByLabel(container, formatDateRu(yesterday));
+    let pastCell = dayByLabel(container, formatDateRu(yesterday));
+    if (pastCell === null) {
+      const previous = container.querySelector<HTMLButtonElement>('[data-direction="prev"]');
+      expect(previous).not.toBeNull();
+      await user.click(previous as HTMLButtonElement);
+      pastCell = dayByLabel(container, formatDateRu(yesterday));
+    }
+
     expect(pastCell).not.toBeNull();
     expect(pastCell).toBeDisabled();
   });
 
-  it('без данных о занятости счётчиков нет и дни по занятости не выключаются', async () => {
-    const user = userEvent.setup();
+  it('без данных о занятости счётчиков нет, подписи остаются дефолтными', () => {
     const { container } = renderCalendar();
 
     expect(container.querySelector('button[data-free-count]')).toBeNull();
+    expect(container.querySelector('button[title]')).toBeNull();
 
-    let days = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(
-        'tbody button:not([disabled]):not([data-outside])',
-      ),
-    );
+    const cells = Array.from(container.querySelectorAll<HTMLButtonElement>('tbody button'));
+    const enabled = cells.filter((cell) => !cell.hasAttribute('data-outside') && !cell.disabled);
 
-    if (days.length === 0) {
-      const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
-      expect(next).not.toBeNull();
-      await user.click(next as HTMLButtonElement);
-      days = Array.from(
-        container.querySelectorAll<HTMLButtonElement>(
-          'tbody button:not([disabled]):not([data-outside])',
-        ),
-      );
-    }
-
-    expect(days.length).toBeGreaterThan(0);
+    // Без данных календарь живёт по правилу дня: хотя бы один bookable-день
+    // текущего месяца доступен, и ни у одного дня нет суффикса счётчика.
+    expect(enabled.length).toBeGreaterThan(0);
+    expect(
+      cells.every((cell) => !/ — свободно \d+$/.test(cell.getAttribute('aria-label') ?? '')),
+    ).toBe(true);
   });
 });

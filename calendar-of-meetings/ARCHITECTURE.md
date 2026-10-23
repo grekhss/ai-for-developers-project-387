@@ -49,14 +49,14 @@ main.tsx ── MantineProvider(dark) + DatesProvider(APP_LOCALE) ──> App: �
   активных типов              (DatePicker)                 (TimeGrid под календарём)
         ▲                            │ onSelect(date)             ▲
         │                            ▼                            │ onChangeTime(time)
- useMeetingTypes(api)          selectedDate ─── takenTimes ───────┘
+ useMeetingTypes(api)          selectedDate ─── disabledTimes ─────┘
         │                            │
         │                            │ handleBook ──► createMeeting({ date, time, meeting_type_id })
         │                            ▼
         │                  useMeetings(api) ──► MeetingsApi ──► createHttpMeetingsApi ──► fetch /api/meetings
         │                            │                              (в dev — Vite-прокси, в проде — тот же origin)
         │                            │                              ▼
-        │                            └─► meetings ─► takenTimes ─► TimeSlots disableTime   express (server/):
+        │                            └─► meetings ─► takenByDay ─► freeCounts/disabledTimes   express (server/):
         │                                  │                validate (формат ajv) + целостность (тип, booker из сессии) → repository → SQLite
         │                                  └─► loading/error ─► «Загрузка записей…» / Alert   (data/meetings.sqlite)
         ▼
@@ -98,7 +98,7 @@ Mantine, ни от его внутреннего устройства.
 
 | Слой | Файлы | Правило |
 | --- | --- | --- |
-| `lib/` | `date.ts`, `window.ts`, `slots.ts`, `meetings/{types,api,inMemory,http}.ts`, `meeting-types/{types,api,inMemory,http}.ts`, `planned-meetings/{types,api,inMemory,http}.ts`, `session/{types,api,inMemory,http}.ts` | Ноль React и ноль Mantine. Чистые функции и типы, тесты лежат рядом. Модули `meetings/`, `meeting-types/`, `planned-meetings/` и `session/` зеркалят друг друга и не зависят друг от друга. |
+| `lib/` | `date.ts`, `window.ts`, `slots.ts`, `availability.ts`, `meetings/{types,api,inMemory,http}.ts`, `meeting-types/{types,api,inMemory,http}.ts`, `planned-meetings/{types,api,inMemory,http}.ts`, `session/{types,api,inMemory,http}.ts` | Ноль React и ноль Mantine. Чистые функции и типы, тесты лежат рядом. Модули `meetings/`, `meeting-types/`, `planned-meetings/` и `session/` зеркалят друг друга и не зависят друг от друга. |
 | `hooks/` | `useMeetings.ts`, `useMeetingTypes.ts`, `usePlannedMeetings.ts`, `useSession.ts` | Единственное место, которое оборачивает `lib` в React-состояние, и единственные мосты к `MeetingsApi`, `MeetingTypesApi`, `PlannedMeetingsApi` и `SessionApi`. |
 | `components/` | `MeetingCalendar.tsx`, `TimeSlots.tsx`, `LoginScreen.tsx` | Только рендер. Пропсы на входе, доменных правил нет. |
 | `App.tsx`, `GuestView.tsx`, `AdminView.tsx` | — | Только UI-состояние страниц (сессия и форма входа; состояние букинга; вкладки и модалка админа) и раскладка. Не импортируют `@mantine/dates`. |
@@ -257,22 +257,34 @@ SessionApi {                                     // src/lib/session/ (F2), зе�
 
 ```tsx
 const moment = now(); // фиксируется на рендер: excludeDate зовётся на каждую ячейку
-const counts = takenTimesByDay === undefined ? null : freeSlotCounts(moment, takenTimesByDay);
 <DatePicker
-  excludeDate={(date) => !isBookableDay(date, moment) || counts?.[date] === 0}
+  excludeDate={(date) => !isBookableDay(date, moment) || freeCounts?.[date] === 0}
 />
 ```
 
 **Занятость дней считается в `lib/availability.ts`, а не в компоненте.**
 `takenTimesByDay` группирует записи по дням, `freeSlotCounts` обходит окно Q5,
 оставляет только bookable-дни и вычитает из `generateTimeSlots()` занятые и уже
-начавшиеся сегодняшние слоты (`isBookableSlot`). `GuestView` передаёт карту
-только при `!loading && error === null`: при загрузке или ошибке `undefined`
-означает «данных нет», и календарь не выключает дни по нулю. `MeetingCalendar`
-рисует счётчик через `renderDay`, подписывает его в `getDayAriaLabel`
-(«3 октября 2026 — свободно 5») и `title`, а для тестов кладёт
-`data-free-count`. `disabled` и `selected` через `getDayProps` не передаются:
-первый перекрыл бы `excludeDate`, второй — выделение `DatePicker`.
+начавшиеся сегодняшние слоты (`isBookableSlot`). `GuestView` — единственный
+источник этих данных: он считает `freeCounts` и передаёт в `MeetingCalendar`
+готовую карту, а компонент только рендерит счётчик (`renderDay`), подпись в
+`getDayAriaLabel` («3 октября 2026 — свободно 5») и `title`, плюс
+`data-free-count` для тестов. `disabled` в `getDayProps` не передаётся: он
+перекрыл бы `excludeDate`; `selected` тоже не трогаем, иначе перекроем выделение
+`DatePicker`.
+
+Счётчики считаются только при `loaded`: до первого успешного ответа `meetings`
+пуст, а «0 свободных» выключило бы весь месяц. Флаг `loaded` из `useMeetings`
+не сбрасывается ошибкой создания (409) — список к этому моменту уже перечитан;
+поэтому красный Alert после неудачной записи не прячет счётчики.
+
+**Сетка `TimeSlots` и счётчик календаря берут один список недоступного.**
+`unavailableTimes(day, takenTimes, moment)` возвращает занятые слоты плюс уже
+начавшиеся сегодня, `freeSlotCounts` считает свободные как
+`generateTimeSlots().length` минус длину этого списка. `GuestView` передаёт тот
+же список в `TimeSlots`, поэтому «свободно 11» и 11 активных кнопок не могут
+разойтись. Если выбранное время стало занятым после «Обновить», `Далее`
+блокируется по `selectedTimeAvailable` — подтвердить устаревший слот нельзя.
 
 **Выбор слота — контролируемый пропс `TimeSlots`, состояние в `GuestView`**
 (`src/components/TimeSlots.tsx`). Очевидная версия — `useState` внутри
@@ -349,7 +361,7 @@ onSelect={(date) => { setLastBooked(null); setTime(null); setSelectedDate(date);
 | Правило, зависящее от роли | `server/routes.ts` рядом с `ajv`-предикатом: схема формы роль не выразит (как обязательность `booker` при создании записи — S5). Не подмешивать домен — см. следующую строку. |
 | Доменная валидация на сервере (2-й клиент, публичный API) | Сейчас сервер проверяет формат и целостность, но не домен (§4). Правила (`isBookable`, сетка слотов) вынести в общий модуль и звать из `server/validate.ts`; UI продолжит пользоваться `lib/`. |
 | Праздники | `lib/date.ts` `isBookable` (день); занятость и полностью занятые дни уже учтены в календаре (§7). |
-| Число свободных слотов и полностью занятые дни | `lib/availability.ts` (`takenTimesByDay`, `freeSlotCounts`): сетка и правила берутся из `lib/slots.ts` и `lib/window.ts`, `MeetingCalendar` только рендерит счётчик и выключает нулевые дни. |
+| Число свободных слотов и полностью занятые дни | `lib/availability.ts` (`takenTimesByDay`, `freeSlotCounts`, `unavailableTimes`): сетка и правила берутся из `lib/slots.ts` и `lib/window.ts`, `GuestView` считает данные, `MeetingCalendar` только рендерит счётчик и выключает нулевые дни. |
 | Другое рабочее время | `lib/slots.ts:2-8` (константы) или аргументы `generateTimeSlots`. |
 | Горизонт списка записей | `lib/window.ts` `WINDOW_DAYS` (гостевое окно Q5): верхняя граница списка — `windowEnd(now())` в `useMeetings`. Админский список окном не ограничен (Q6): `listPlanned` в `server/repository.ts` фильтрует только «`date >= from`», верхней границы нет (S4). |
 | Ручное обновление списка | `refresh` из `useMeetings` (`useMeetings.ts:55`) зовёт кнопка «Обновить» на шаге «Время» в `GuestView`; хук не менялся. |
@@ -385,14 +397,14 @@ onSelect={(date) => { setLastBooked(null); setTime(null); setSelectedDate(date);
 
 ## 8. Тестовая стратегия
 
-239 тестов: `date.ts` 13, `window.ts` 13, `slots.ts` 4, `availability.ts` 8, `devRole` 1,
+245 тестов: `date.ts` 13, `window.ts` 13, `slots.ts` 4, `availability.ts` 10, `devRole` 1,
 `meetings` (`inMemory` 8, `http` 7),
 `meeting-types` (`inMemory` 7, `http` 8), `planned-meetings` (`inMemory` 4, `http` 5),
 `session` (`inMemory` 8, `http` 10),
-`useMeetings` 7, `useMeetingTypes` 6, `usePlannedMeetings` 3, `useSession` 7,
+`useMeetings` 10, `useMeetingTypes` 6, `usePlannedMeetings` 3, `useSession` 7,
 `TimeSlots` 4, `MeetingCalendar` 5 (счётчики, нулевой день, выделение, выходные),
-`GuestView` 21 (сценарии букинга F7: тип, слот, подтверждение, Alert'и,
-календарь со свободными слотами и «Обновить»), `AdminView` 9 (вкладки,
+`GuestView` 22 (сценарии букинга F7: тип, слот, подтверждение, Alert'и,
+календарь со свободными слотами, «Обновить» и устаревший выбранный слот), `AdminView` 9 (вкладки,
 деактивация, создание, легаси-«—», пустое состояние), `App` 8 (сквозные
 сценарии гейта по сессии: вход, роль, выход)
 — и серверные: `repository` 15 (включая join-DTO `listPlanned`),
@@ -453,7 +465,7 @@ null)` → `if (true)` — тест на ошибку создания, `disable
 тест на закрытые переходы. Один выживший (снятие `setLastBooked(null)` из
 `selectType`) пойман добавленным тестом «после записи смена типа гасит строку
 успеха» — так ловится и «зелёный, но ничего не проверяющий» тест. Раньше то же:
-`takenTimes={[]}` валит тест «занятый
+`disabledTimes={[]}` валит тест «занятый
 слот в следующий раз не выбирается», удаление `setLastBooked` из
 `handleBook` — три теста: два прежних и новый, на сброс строки. Это дешевле,
 чем потом отлаживать «зелёный, но ничего не проверяющий» тест. Такая ловушка
@@ -476,6 +488,17 @@ null)` → `if (true)` — тест на ошибку создания, `disable
 на `requireSession`, cookie `dev_role=admin` без роли admin, снятие ветки login в
 обходе, возврат обязательной проверки auth-конфига в `createApp` и расширение
 `/admin` до `startsWith('/admin')` (ловит `/administrator`).
+
+Счётчики свободных слотов и ручное обновление закрыты харнессом из 11 мутаций —
+все убиты: снятие суффикса из `getDayAriaLabel` (6 падений), удаление `title` (1),
+удаление `data-free-count` (2), игнорирование счётчика в `renderDay` (1),
+`undefined` → `0` (4), расчёт счётчиков при загрузке (2), гейт по `error` вместо
+`loaded` (2), `Далее` без проверки занятости выбранного времени (1),
+`unavailableTimes` без `isBookableSlot` (3), `freeSlotCounts` без того же правила
+(2) и старый ответ загрузки, перезаписывающий свежий `refresh` (1). Визуальная
+приёмка ячейки: в headless Chrome ячейка 36×36, `scrollHeight` 36 при
+`overflow: visible`, содержимое 26px; у дня «свободно 17» сетка показала ровно
+17 активных слотов, а занятый 17:00 был выключен.
 
 ## 9. Чек-лист инвариантов для агента
 
@@ -532,6 +555,6 @@ npm test        # vitest run
 
 Линтер — `oxlint`, не ESLint. В `.oxlintrc.json` категории `correctness` и
 `suspicious` это `error` и роняют код выхода, `perf` — `warn`, поэтому текущие
-warning `react-perf` на инлайн-обратчиках и свежем массиве `takenTimes` падением
+warning `react-perf` на инлайн-обратчиках и свежих массивах `disabledTimes` падением
 не считаются. `unicorn` в `plugins` отсутствует и потому выключен: `plugins`
 заменяет набор по умолчанию, а не дополняет его.

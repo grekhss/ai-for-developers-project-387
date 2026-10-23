@@ -23,6 +23,21 @@ export function takenTimesByDay(meetings: Meeting[]): Record<string, string[]> {
 }
 
 /**
+ * Недоступные слоты дня: занятые другими записями и уже начавшиеся сегодня.
+ * Это ровно то, что выключает `TimeSlots`, — чтобы сетка и счётчик в календаре
+ * считали «свободное» по одному правилу.
+ */
+export function unavailableTimes(
+  day: string,
+  takenTimes: string[],
+  moment: string,
+): string[] {
+  return generateTimeSlots().filter(
+    (time) => takenTimes.includes(time) || !isBookableSlot(day, time, moment),
+  );
+}
+
+/**
  * Число свободных слотов в каждом bookable-дне окна. Выходные и дни вне окна в
  * карту не попадают — они и так выключены правилом дня; сегодняшние слоты,
  * которые уже начались, не считаются свободными. Дни с нулём остаются в карте:
@@ -43,10 +58,9 @@ export function freeSlotCounts(
   ) {
     if (!isBookableDay(day, moment)) continue;
 
-    const takenToday = taken[day] ?? [];
-    counts[day] = slots.filter(
-      (time) => !takenToday.includes(time) && isBookableSlot(day, time, moment),
-    ).length;
+    // Тот же список недоступного, что получает TimeSlots: счётчик не может
+    // разойтись с сеткой, даже если правило слотов изменится.
+    counts[day] = slots.length - unavailableTimes(day, taken[day] ?? [], moment).length;
   }
 
   return counts;

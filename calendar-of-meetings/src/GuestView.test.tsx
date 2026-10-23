@@ -11,8 +11,8 @@ import type { Meeting } from './lib/meetings/types.ts';
 import { createInMemoryMeetingTypesApi } from './lib/meeting-types/inMemory.ts';
 import type { MeetingTypesApi } from './lib/meeting-types/api.ts';
 import type { MeetingType } from './lib/meeting-types/types.ts';
-import { APP_LOCALE, addDays, formatDateRu, now, today } from './lib/date.ts';
-import { isBookableDay } from './lib/window.ts';
+import { APP_LOCALE, addDays, formatDateRu } from './lib/date.ts';
+import { nextBookableDate } from './test/bookableDate.ts';
 import { generateTimeSlots } from './lib/slots.ts';
 
 const DATES_SETTINGS = { locale: APP_LOCALE };
@@ -106,23 +106,6 @@ async function openFirstBookableDay(
   await user.click(day);
 
   return label as string;
-}
-
-/**
- * Первый bookable-день после сегодняшнего ровно тем же правилом, что календарь
- * (isBookableDay): тесты сеют занятые слоты в конкретные даты, а не парсят
- * aria-label. Завтрашний будний день всегда полон слотов — в отличие от
- * сегодняшнего, у которого к вечеру свободных слотов нет.
- */
-function nextBookableDate(): string {
-  const moment = now();
-
-  for (let offset = 1; offset < 14; offset++) {
-    const day = addDays(today(), offset);
-    if (isBookableDay(day, moment)) return day;
-  }
-
-  throw new Error('в гостевом окне нет буднего дня после сегодняшнего');
 }
 
 /** Проходит шаг «Тип»: выбирает первый тип и жмёт «Далее». */
@@ -316,6 +299,31 @@ describe('гостевой вид', () => {
     });
   });
 
+  it('«Обновить» делает занятый выбранный слот непригодным для «Далее»', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    let calls = 0;
+    const api: MeetingsApi = {
+      list: () => Promise.resolve(calls++ === 0 ? [] : [{ id: '1', date, time: '11:00' }]),
+      create: () => Promise.reject(new Error('не должен вызываться')),
+    };
+    const { container } = await renderGuestView(api);
+    await pickTypeAndNext(user);
+    await openFirstBookableDay(user, container);
+    await user.click(screen.getByRole('button', { name: '11:00' }));
+
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Обновить' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '11:00' })).toBeDisabled();
+    });
+    // Выбранное время больше не свободно — подтверждать его нельзя, даже если
+    // состояние `time` ещё хранит '11:00'.
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled();
+  });
+
   it('«Далее» в подтверждение доступно только со слотом; сводка тип/дата/время', async () => {
     const user = userEvent.setup();
     const date = nextBookableDate();
@@ -363,6 +371,11 @@ describe('гостевой вид', () => {
     expect(alert).toHaveTextContent('Не удалось создать запись. Выберите другое время.');
     expect(alert.style.getPropertyValue('--alert-color')).toContain('red');
     expect(screen.queryByText(/^Запись:/)).not.toBeInTheDocument();
+
+    // Ошибка создания не равна ошибке загрузки: список уже перечитан, счётчики
+    // должны остаться, а не исчезнуть вместе с `error`.
+    await user.click(screen.getByText('Время'));
+    expect(container.querySelector('button[data-free-count]')).not.toBeNull();
   });
 
   it('занятый слот в следующий раз не выбирается', async () => {

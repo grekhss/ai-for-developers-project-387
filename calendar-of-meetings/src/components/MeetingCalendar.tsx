@@ -1,7 +1,6 @@
 import { Stack, Text } from '@mantine/core';
 import { DatePicker } from '@mantine/dates';
 import { formatDateRu, now } from '../lib/date.ts';
-import { freeSlotCounts } from '../lib/availability.ts';
 import { isBookableDay } from '../lib/window.ts';
 
 interface MeetingCalendarProps {
@@ -10,10 +9,11 @@ interface MeetingCalendarProps {
   /** Вызывается с днём, выбранным пользователем. */
   onSelect: (date: string) => void;
   /**
-   * Занятые слоты по дням. `undefined` — данных нет (загрузка или ошибка):
-   * счётчиков не показываем и дни по занятости не выключаем.
+   * Готовые счётчики свободных слотов по bookable-дням. `undefined` — данных
+   * нет (загрузка или ошибка загрузки): счётчиков не показываем и дни по
+   * занятости не выключаем. Считает их страница через `lib/availability.ts`.
    */
-  takenTimesByDay?: Record<string, string[]>;
+  freeCounts?: Record<string, number>;
   /** «Сейчас» ('YYYY-MM-DD HH:mm'); по умолчанию читается один раз на рендер. */
   moment?: string;
 }
@@ -26,17 +26,14 @@ interface MeetingCalendarProps {
 export default function MeetingCalendar({
   value,
   onSelect,
-  takenTimesByDay,
+  freeCounts,
   moment = now(),
 }: MeetingCalendarProps) {
   // Правило «в какие дни можно записаться» живёт в lib (isBookableDay = будни,
   // не прошедший день и гостевое окно Q5); здесь только переворачиваем его под
-  // конвенцию excludeDate и добавляем полностью занятые дни.
-  const counts =
-    takenTimesByDay === undefined ? null : freeSlotCounts(moment, takenTimesByDay);
-
+  // конвенцию excludeDate и добавляем готовые счётчики от страницы.
   function freeCount(date: string): number | undefined {
-    return counts?.[date];
+    return freeCounts?.[date];
   }
 
   return (

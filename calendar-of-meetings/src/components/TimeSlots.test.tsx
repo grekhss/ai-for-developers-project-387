@@ -7,7 +7,7 @@ import { generateTimeSlots } from '../lib/slots.ts';
 
 function renderSlots(overrides: Partial<Parameters<typeof TimeSlots>[0]> = {}) {
   const props = {
-    takenTimes: [] as string[],
+    disabledTimes: [] as string[],
     time: null as string | null,
     onChangeTime: vi.fn(),
     ...overrides,
@@ -41,8 +41,8 @@ describe('TimeSlots', () => {
     expect(slots.at(-1)).toHaveTextContent('17:30');
   });
 
-  it('выключает уже занятые слоты', () => {
-    renderSlots({ takenTimes: ['11:00'] });
+  it('выключает недоступные слоты', () => {
+    renderSlots({ disabledTimes: ['11:00'] });
 
     expect(screen.getByRole('button', { name: '11:00' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '12:00' })).toBeEnabled();
@@ -58,7 +58,7 @@ describe('TimeSlots', () => {
   });
 
   it('все слоты заняты — явный текст вместо сетки', () => {
-    renderSlots({ takenTimes: generateTimeSlots() });
+    renderSlots({ disabledTimes: generateTimeSlots() });
 
     expect(screen.getByText('На этот день свободных слотов нет')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();

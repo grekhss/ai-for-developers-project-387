@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { freeSlotCounts, takenTimesByDay } from './availability.ts';
+import { freeSlotCounts, takenTimesByDay, unavailableTimes } from './availability.ts';
 import { generateTimeSlots } from './slots.ts';
 import type { Meeting } from './meetings/types.ts';
 
@@ -27,6 +27,22 @@ describe('takenTimesByDay', () => {
 
   it('без записей отдаёт пустую карту', () => {
     expect(takenTimesByDay([])).toEqual({});
+  });
+});
+
+describe('unavailableTimes', () => {
+  it('включает занятые слоты и уже начавшиеся сегодня', () => {
+    const times = unavailableTimes('2026-10-21', ['12:30'], '2026-10-21 12:00');
+
+    // Все слоты до 12:00 включительно уже начались, 12:30 занят.
+    expect(times).toContain('09:00');
+    expect(times).toContain('12:00');
+    expect(times).toContain('12:30');
+    expect(times).not.toContain('13:00');
+  });
+
+  it('на будущий день выключает только занятые слоты', () => {
+    expect(unavailableTimes('2026-10-22', ['11:00'], MOMENT)).toEqual(['11:00']);
   });
 });
 

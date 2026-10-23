@@ -463,6 +463,8 @@ calendar-of-meetings/
     │   ├── window.test.ts
     │   ├── slots.ts        # generateTimeSlots — workday bounds and slot length
     │   ├── slots.test.ts
+    │   ├── availability.ts # занятость по дням: takenTimesByDay, freeSlotCounts, unavailableTimes
+    │   ├── availability.test.ts
     │   ├── meetings/
     │   │   ├── types.ts    # alias'ы Meeting/MeetingDraft/DateRange из contract.gen.ts
     │   │   ├── api.ts      # MeetingsApi interface + the instance the app uses (HTTP)
@@ -491,7 +493,9 @@ calendar-of-meetings/
     │       ├── http.test.ts
     │       ├── inMemory.ts # createInMemorySessionApi(seed); пароли-фикстуры 'admin'/'guest'
     │       └── inMemory.test.ts
-    └── test/setup.ts       # matchMedia + ResizeObserver stubs, dayjs locale, RTL cleanup (app-проект vitest)
+    └── test/
+        ├── setup.ts        # matchMedia + ResizeObserver stubs, dayjs locale, RTL cleanup (app-проект vitest)
+        └── bookableDate.ts # nextBookableDate — общий helper тестов дат (не сам тест)
 ```
 
 **Read `ARCHITECTURE.md` first.** It covers the layers, the `MeetingsApi`
@@ -526,8 +530,11 @@ onSelect={(date) => { setLastBooked(null); setTime(null); setSelectedDate(date);
 
 Ступени переключаются кнопками «Далее» с проверками выбора, назад — кликом по
 пройденному шагу: `allowNextStepsSelect={false}` не даёт прыгнуть на «Готово»
-без даты и времени. `TimeSlots` получает `takenTimes` из записей выбранного
-дня — так занятый слот не выбирается и после перечитывания списка. Через
+без даты и времени. `GuestView` — единственный источник занятости: из
+`takenTimesByDay(meetings)` он считает `freeCounts` для календаря и
+`unavailableTimes` (занятые + уже начавшиеся сегодня) для `TimeSlots`; компоненты
+правило не пересчитывают. `loaded` из `useMeetings` (а не `error === null`)
+разрешает счётчики, поэтому ошибка создания записи их не прячет. Через
 `createMeeting` гостевой флоу всегда прокидывает `meeting_type_id` (контракт
 намеренно допускает запись без типа для легаси, но F7-сценарий её не создаёт).
 `AdminView` (F6) держит только UI-состояние: активную вкладку, `opened` модалки

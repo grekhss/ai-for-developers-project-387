@@ -7,7 +7,7 @@ import { useMeetingTypes } from './hooks/useMeetingTypes.ts';
 import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
 import { formatDateRu, now } from './lib/date.ts';
-import { takenTimesByDay } from './lib/availability.ts';
+import { freeSlotCounts, takenTimesByDay, unavailableTimes } from './lib/availability.ts';
 import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 
 type MeetingTypesState = 'loading' | 'error' | 'empty' | 'ready';
@@ -49,20 +49,27 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [lastBooked, setLastBooked] = useState<BookedSummary | null>(null);
-  const { meetings, loading, error, refresh, createMeeting } = useMeetings(api);
+  const { meetings, loading, refreshing, loaded, error, refresh, createMeeting } = useMeetings(api);
   const { meetingTypes, loading: typesLoading, error: typesError } = useMeetingTypes(typesApi);
 
-  // Одно «сейчас» на рендер: календарь и счётчики должны считать одинаково.
+  // Одно «сейчас» на рендер: календарь, счётчики и сетка слотов считают одинаково.
   const moment = now();
-  // Счётчики — только по достоверным данным: при загрузке `meetings` пуст, а
-  // при ошибке список неполон, и «0 свободных» выключило бы весь месяц.
-  const takenByDay =
-    !loading && error === null ? takenTimesByDay(meetings) : undefined;
+  // Единственный источник занятости: из него берут данные и счётчики календаря,
+  // и недоступные слоты сетки — разойтись они не могут.
+  const takenByDay = takenTimesByDay(meetings);
+  // Счётчики — только по достоверным данным: пока список ни разу не загрузился,
+  // `meetings` пуст, и «0 свободных» выключило бы весь месяц. Ошибка создания
+  // (409) не сбрасывает `loaded`: список уже перечитан и достоверен.
+  const freeCounts = loaded ? freeSlotCounts(moment, takenByDay) : undefined;
   const selectedType = meetingTypes.find((type) => type.id === typeId) ?? null;
-  const takenTimes = meetings
-    .filter((meeting) => meeting.date === selectedDate)
-    .map((meeting) => meeting.time);
-  const readyToConfirm = selectedType !== null && selectedDate !== null && time !== null;
+  const takenTimes = selectedDate === null ? [] : takenByDay[selectedDate] ?? [];
+  // Сетка выключает занятые и уже начавшиеся сегодня слоты — по тому же правилу,
+  // по которому календарь считает свободные.
+  const disabledTimes =
+    selectedDate === null ? [] : unavailableTimes(selectedDate, takenTimes, moment);
+  const selectedTimeAvailable = time !== null && !disabledTimes.includes(time);
+  const readyToConfirm =
+    selectedType !== null && selectedDate !== null && selectedTimeAvailable;
   const typesState = meetingTypesState(typesLoading, typesError, meetingTypes.length);
 
   // Смена любого выбора гасит строку успеха: она описывает прежнюю запись.
@@ -152,7 +159,7 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
             <MeetingCalendar
               value={selectedDate}
               onSelect={selectDate}
-              takenTimesByDay={takenByDay}
+              freeCounts={freeCounts}
               moment={moment}
             />
 
@@ -162,10 +169,10 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
               <Button
                 variant="subtle"
                 size="xs"
-                disabled={loading}
+                disabled={loading || refreshing}
                 onClick={() => { void refresh(); }}
               >
-                Обновить
+                {refreshing ? 'Обновление…' : 'Обновить'}
               </Button>
             </Group>
 
@@ -174,12 +181,16 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
             ) : loading ? (
               <Text mt="md" c="dimmed">Загрузка записей…</Text>
             ) : (
-              <TimeSlots takenTimes={takenTimes} time={time} onChangeTime={selectTime} />
+              <TimeSlots
+                disabledTimes={disabledTimes}
+                time={selectedTimeAvailable ? time : null}
+                onChangeTime={selectTime}
+              />
             )}
 
             <Button
               mt="md"
-              disabled={selectedDate === null || time === null}
+              disabled={!selectedTimeAvailable}
               onClick={() => setStep(2)}
             >
               Далее
