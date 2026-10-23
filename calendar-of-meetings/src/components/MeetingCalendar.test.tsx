@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import MeetingCalendar from './MeetingCalendar.tsx';
 import { APP_LOCALE, addDays, formatDateRu, now, today } from '../lib/date.ts';
 import { nextBookableDate } from '../test/bookableDate.ts';
+import { dayByLabel, showMonthOf } from '../test/calendar.ts';
 
 function renderCalendar(
   props: {
@@ -31,32 +32,6 @@ function renderCalendar(
   );
 
   return { ...view, onSelect, moment };
-}
-
-/**
- * Перелистывает календарь к месяцу даты: дата может быть в следующем месяце,
- * если в текущем не осталось будних дней.
- */
-async function showMonthOf(
-  date: string,
-  container: HTMLElement,
-  user: ReturnType<typeof userEvent.setup>,
-) {
-  const target = dayjs(date).locale(APP_LOCALE).format('MMMM YYYY');
-  const header = () =>
-    container.querySelector<HTMLButtonElement>('.mantine-DatePicker-calendarHeaderLevel');
-
-  for (let step = 0; step < 2 && header()?.textContent !== target; step++) {
-    const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
-    expect(next).not.toBeNull();
-    await user.click(next as HTMLButtonElement);
-  }
-
-  expect(header()?.textContent).toBe(target);
-}
-
-function dayByLabel(container: HTMLElement, label: string): HTMLButtonElement | null {
-  return container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 }
 
 /** Даты сетки текущего месяца: 6 недель от понедельника первой недели. */
@@ -148,20 +123,20 @@ describe('MeetingCalendar', () => {
     expect(pastCell).toBeDisabled();
   });
 
-  it('без данных о занятости счётчиков нет, подписи остаются дефолтными', () => {
+  it('без данных о занятости счётчиков нет, подпись дня дефолтная', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate(now());
     const { container } = renderCalendar();
 
+    await showMonthOf(date, container, user);
+
+    const cell = dayByLabel(container, formatDateRu(date));
+    expect(cell).not.toBeNull();
+    expect(cell).toBeEnabled();
+    expect(cell).toHaveAttribute('aria-label', formatDateRu(date));
+    expect(cell).not.toHaveAttribute('data-free-count');
+    expect(cell).not.toHaveAttribute('title');
     expect(container.querySelector('button[data-free-count]')).toBeNull();
     expect(container.querySelector('button[title]')).toBeNull();
-
-    const cells = Array.from(container.querySelectorAll<HTMLButtonElement>('tbody button'));
-    const enabled = cells.filter((cell) => !cell.hasAttribute('data-outside') && !cell.disabled);
-
-    // Без данных календарь живёт по правилу дня: хотя бы один bookable-день
-    // текущего месяца доступен, и ни у одного дня нет суффикса счётчика.
-    expect(enabled.length).toBeGreaterThan(0);
-    expect(
-      cells.every((cell) => !/ — свободно \d+$/.test(cell.getAttribute('aria-label') ?? '')),
-    ).toBe(true);
   });
 });
