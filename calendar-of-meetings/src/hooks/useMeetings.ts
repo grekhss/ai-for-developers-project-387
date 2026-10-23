@@ -85,8 +85,12 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
 
       setState((previous) => ({
         ...previous,
+        // Ошибка перечитывания делает и старый список недостоверным: страница
+        // прячет счётчики и сетку, пока «Обновить» не завершится успехом.
+        meetings: [],
         loading: false,
         refreshing: false,
+        loaded: false,
         error: LOAD_ERROR,
       }));
     }

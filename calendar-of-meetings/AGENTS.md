@@ -438,8 +438,9 @@ calendar-of-meetings/
     ├── GuestView.test.tsx  # сценарии букинга: тип, слот, подтверждение, Alert'и
     ├── AdminView.tsx       # админ-панель (F6, D4): вкладки, Switch-деактивация, модалка «Добавить тип», список встреч
     ├── AdminView.test.tsx  # сценарии панели: вкладки, деактивация, создание, легаси-«—», пустое состояние
-    ├── components/         # rendering only; props in, no domain rules
+    ├── components/         # rendering only; calendar applies the day rule + ready counts
     │   ├── MeetingCalendar.tsx  # the only component that renders date selection
+    │   ├── MeetingCalendar.test.tsx
     │   ├── TimeSlots.tsx   # инлайн-сетка TimeGrid под календарём (D4); пустое состояние — текст
     │   ├── TimeSlots.test.tsx
     │   └── LoginScreen.tsx   # форма входа (D4); поля формы держит App, компонент рендерит
@@ -495,7 +496,8 @@ calendar-of-meetings/
     │       └── inMemory.test.ts
     └── test/
         ├── setup.ts        # matchMedia + ResizeObserver stubs, dayjs locale, RTL cleanup (app-проект vitest)
-        └── bookableDate.ts # nextBookableDate — общий helper тестов дат (не сам тест)
+        ├── bookableDate.ts # nextBookableDate — общий helper тестов дат (не сам тест)
+        └── calendar.ts     # dayByLabel/showMonthOf/findDayCell — общий поиск дней в тестах
 ```
 
 **Read `ARCHITECTURE.md` first.** It covers the layers, the `MeetingsApi`

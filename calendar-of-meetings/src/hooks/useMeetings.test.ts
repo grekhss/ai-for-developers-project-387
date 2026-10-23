@@ -110,6 +110,24 @@ describe('useMeetings', () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it('ошибка refresh сбрасывает loaded и старый список', async () => {
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([{ id: '1', date: futureDate, time: '10:00' }])
+      .mockRejectedValue(new Error('нет связи'));
+    const api: MeetingsApi = { list, create: () => Promise.reject(new Error('не вызывается')) };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => { await result.current.refresh(); });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.meetings).toEqual([]);
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.error).toBe('Не удалось получить список записей.');
+  });
+
   it('старый ответ загрузки не перезаписывает более новый refresh', async () => {
     let resolveLoad: ((meetings: Meeting[]) => void) | undefined;
     let resolveRefresh: ((meetings: Meeting[]) => void) | undefined;

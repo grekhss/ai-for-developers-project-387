@@ -13,6 +13,7 @@ import type { MeetingTypesApi } from './lib/meeting-types/api.ts';
 import type { MeetingType } from './lib/meeting-types/types.ts';
 import { APP_LOCALE, addDays, formatDateRu } from './lib/date.ts';
 import { nextBookableDate } from './test/bookableDate.ts';
+import { findDayCell } from './test/calendar.ts';
 import { generateTimeSlots } from './lib/slots.ts';
 
 const DATES_SETTINGS = { locale: APP_LOCALE };
@@ -56,26 +57,6 @@ function bookableDays(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll<HTMLButtonElement>(
     'tbody button:not([disabled]):not([data-outside])',
   ));
-}
-
-/** Кнопка дня по точному aria-label; при необходимости листает на месяц вперёд. */
-async function findDayCell(
-  user: ReturnType<typeof userEvent.setup>,
-  container: HTMLElement,
-  label: string,
-): Promise<HTMLButtonElement | null> {
-  const find = () =>
-    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-
-  let cell = find();
-  if (cell === null) {
-    const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
-    expect(next).not.toBeNull();
-    await user.click(next as HTMLButtonElement);
-    cell = find();
-  }
-
-  return cell;
 }
 
 /** Открывает первый доступный день после сегодняшнего и возвращает его
@@ -359,6 +340,73 @@ describe('гостевой вид', () => {
     expect((alert as HTMLElement).style.getPropertyValue('--alert-color')).toContain('blue');
   });
 
+  it('после успешной записи сводка остаётся, повторная запись выключена', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    const api = createInMemoryMeetingsApi();
+    const create = vi.spyOn(api, 'create');
+    const { container } = await renderGuestView(api);
+    await pickTypeAndNext(user);
+    await pickSlot(user, container);
+
+    await user.click(screen.getByRole('button', { name: 'Записаться' }));
+    await screen.findByText(/^Запись:/);
+
+    // Слот уже занят, но сводка описывает сделанный выбор и не исчезает.
+    expect(screen.getByText(`Дата: ${formatDateRu(date)}`)).toBeInTheDocument();
+    expect(screen.getByText('Время: 11:00')).toBeInTheDocument();
+    const book = screen.getByRole('button', { name: 'Записаться' });
+    expect(book).toBeDisabled();
+
+    await user.click(book);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('после 409 с занятым слотом сводка остаётся, повторная запись выключена', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ id: '1', date, time: '11:00' }]);
+    const create = vi.fn(() => Promise.reject(new Error('слот занят')));
+    const { container } = await renderGuestView({ list, create });
+    await pickTypeAndNext(user);
+    await pickSlot(user, container);
+
+    await user.click(screen.getByRole('button', { name: 'Записаться' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось создать запись. Выберите другое время.'
+    );
+    expect(screen.getByText('Время: 11:00')).toBeInTheDocument();
+    const book = screen.getByRole('button', { name: 'Записаться' });
+    expect(book).toBeDisabled();
+
+    await user.click(book);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('пока запись создаётся, «Записаться» выключена', async () => {
+    const user = userEvent.setup();
+    const date = nextBookableDate();
+    let resolveCreate: ((meeting: Meeting) => void) | undefined;
+    const api = createInMemoryMeetingsApi();
+    vi.spyOn(api, 'create').mockImplementationOnce(
+      () => new Promise<Meeting>((resolve) => { resolveCreate = resolve; })
+    );
+    const { container } = await renderGuestView(api);
+    await pickTypeAndNext(user);
+    await pickSlot(user, container);
+
+    await user.click(screen.getByRole('button', { name: 'Записаться' }));
+
+    expect(screen.getByRole('button', { name: 'Запись…' })).toBeDisabled();
+
+    resolveCreate?.({ id: 'new', date, time: '11:00' });
+    await screen.findByText(/^Запись:/);
+  });
+
   it('ошибка создания — красный Alert вместо синего', async () => {
     const user = userEvent.setup();
     const { container } = await renderGuestView(failingApi());
@@ -478,7 +526,7 @@ describe('гостевой вид', () => {
     expect(container.querySelector('button[data-free-count]')).toBeNull();
   });
 
-  it('ошибка загрузки записей — без счётчиков и выключенных по занятости дней', async () => {
+  it('ошибка загрузки записей — без счётчиков и без сетки свободных слотов', async () => {
     const user = userEvent.setup();
     const failing: MeetingsApi = {
       list: () => Promise.reject(new Error('нет связи')),
@@ -492,7 +540,44 @@ describe('гостевой вид', () => {
     );
     // Данных нет — счётчики не считаются, календарь остаётся по правилу дня.
     expect(container.querySelector('button[data-free-count]')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Обновить' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Обновить' })).toBeEnabled();
+
+    await openFirstBookableDay(user, container);
+
+    // Пустой список не превращается в «все 18 слотов свободны».
+    expect(screen.getByText('Слоты недоступны: список записей не загружен.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled();
+  });
+
+  it('ошибка «Обновить» прячет старые счётчики и сетку до успешного ответа', async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('нет связи'));
+    const { container } = await renderGuestView({
+      list,
+      create: () => Promise.reject(new Error('не должен вызываться')),
+    });
+    await pickTypeAndNext(user);
+
+    await waitFor(() => {
+      expect(container.querySelector('button[data-free-count]')).not.toBeNull();
+    });
+    await openFirstBookableDay(user, container);
+    await user.click(screen.getByRole('button', { name: '09:00' }));
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Обновить' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось получить список записей.'
+    );
+    expect(container.querySelector('button[data-free-count]')).toBeNull();
+    expect(screen.getByText('Слоты недоступны: список записей не загружен.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '09:00' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled();
   });
 
   it('пока типы грузятся — «Загрузка типов встреч…» вместо степпера', async () => {

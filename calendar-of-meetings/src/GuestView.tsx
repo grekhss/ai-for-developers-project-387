@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Button, Group, Radio, Stack, Stepper, Text } from '@mantine/core';
 import MeetingCalendar from './components/MeetingCalendar.tsx';
 import TimeSlots from './components/TimeSlots.tsx';
@@ -49,6 +49,10 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [lastBooked, setLastBooked] = useState<BookedSummary | null>(null);
+  const [creating, setCreating] = useState(false);
+  // Синхронная защита от двойного клика: `creating` успевает обновиться только
+  // к следующему рендеру, а второй клик может прийти раньше.
+  const creatingRef = useRef(false);
   const { meetings, loading, refreshing, loaded, error, refresh, createMeeting } = useMeetings(api);
   const { meetingTypes, loading: typesLoading, error: typesError } = useMeetingTypes(typesApi);
 
@@ -67,9 +71,11 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   // по которому календарь считает свободные.
   const disabledTimes =
     selectedDate === null ? [] : unavailableTimes(selectedDate, takenTimes, moment);
-  const selectedTimeAvailable = time !== null && !disabledTimes.includes(time);
-  const readyToConfirm =
-    selectedType !== null && selectedDate !== null && selectedTimeAvailable;
+  // «Выбор заполнен» и «слот ещё свободен» — разные вопросы. Сводка на шаге
+  // «Готово» показывает выбор, даже если после перечитывания слот стал занят;
+  // «Далее» и «Записаться» смотрят на актуальную доступность.
+  const selectionComplete = selectedType !== null && selectedDate !== null && time !== null;
+  const selectedTimeAvailable = loaded && time !== null && !disabledTimes.includes(time);
   const typesState = meetingTypesState(typesLoading, typesError, meetingTypes.length);
 
   // Смена любого выбора гасит строку успеха: она описывает прежнюю запись.
@@ -92,17 +98,36 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   }
 
   async function handleBook() {
-    if (selectedType === null || selectedDate === null || time === null) return;
+    if (
+      !selectionComplete ||
+      !selectedTimeAvailable ||
+      creatingRef.current ||
+      selectedType === null ||
+      selectedDate === null ||
+      time === null
+    ) {
+      return;
+    }
 
-    const created = await createMeeting({
-      date: selectedDate,
-      time,
-      meeting_type_id: selectedType.id,
-    });
-    // Строка «Запись: …» — только при успехе: иначе при ошибке создания
-    // под красным Alert'ом висела бы и синяя запись.
-    if (created !== null) {
-      setLastBooked({ typeName: selectedType.name, date: selectedDate, time });
+    creatingRef.current = true;
+    setCreating(true);
+
+    try {
+      const created = await createMeeting({
+        date: selectedDate,
+        time,
+        meeting_type_id: selectedType.id,
+      });
+      // Строка «Запись: …» — только при успехе: иначе при ошибке создания
+      // под красным Alert'ом висела бы и синяя запись. После успеха `time` не
+      // сбрасываем: сводка должна остаться на экране, а повторную запись
+      // блокирует обновлённая занятость.
+      if (created !== null) {
+        setLastBooked({ typeName: selectedType.name, date: selectedDate, time });
+      }
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   }
 
@@ -180,6 +205,10 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
               <Text mt="md" c="dimmed">Выберите дату, чтобы посмотреть свободные слоты.</Text>
             ) : loading ? (
               <Text mt="md" c="dimmed">Загрузка записей…</Text>
+            ) : !loaded ? (
+              // Без списка записей все слоты выглядели бы свободными: это
+              // враньё, которое ведёт к 409. Сетку не показываем до refresh.
+              <Text mt="md" c="dimmed">Слоты недоступны: список записей не загружен.</Text>
             ) : (
               <TimeSlots
                 disabledTimes={disabledTimes}
@@ -198,7 +227,7 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
           </Stepper.Step>
 
           <Stepper.Step label="Готово">
-            {readyToConfirm && (
+            {selectionComplete && (
               <>
                 <Text>Тип: {selectedType.name}</Text>
                 <Text>Дата: {formatDateRu(selectedDate)}</Text>
@@ -206,8 +235,12 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
               </>
             )}
 
-            <Button mt="md" onClick={() => { void handleBook(); }}>
-              Записаться
+            <Button
+              mt="md"
+              disabled={!selectionComplete || !selectedTimeAvailable || creating}
+              onClick={() => { void handleBook(); }}
+            >
+              {creating ? 'Запись…' : 'Записаться'}
             </Button>
           </Stepper.Step>
         </Stepper>
