@@ -123,7 +123,7 @@ describe('MeetingCalendar', () => {
     expect(pastCell).toBeDisabled();
   });
 
-  it('без данных о занятости счётчиков нет, подпись дня дефолтная', async () => {
+  it('без данных о занятости счётчиков нет, подпись совпадает с дефолтной', async () => {
     const user = userEvent.setup();
     const date = nextBookableDate(now());
     const { container } = renderCalendar();
