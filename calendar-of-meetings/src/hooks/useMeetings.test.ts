@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import dayjs from 'dayjs';
 import { useMeetings } from './useMeetings.ts';
 import { createInMemoryMeetingsApi } from '../lib/meetings/inMemory.ts';
@@ -84,6 +84,121 @@ describe('useMeetings', () => {
     // хук своё поле не добавляет.
     expect(created).toEqual({ id: '1', date: futureDate, time: '11:00' });
     expect(result.current.error).toBeNull();
+  });
+
+  it('на время refresh взводит refreshing и снимает его после ответа', async () => {
+    let resolveList: ((meetings: Meeting[]) => void) | undefined;
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise<Meeting[]>((resolve) => { resolveList = resolve; }));
+    const api: MeetingsApi = { list, create: () => Promise.reject(new Error('не вызывается')) };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let refreshing: Promise<void> | undefined;
+    act(() => {
+      refreshing = result.current.refresh();
+    });
+
+    expect(result.current.refreshing).toBe(true);
+
+    resolveList?.([]);
+    await act(async () => { await refreshing; });
+
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('ошибка refresh сбрасывает loaded и старый список', async () => {
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([{ id: '1', date: futureDate, time: '10:00' }])
+      .mockRejectedValue(new Error('нет связи'));
+    const api: MeetingsApi = { list, create: () => Promise.reject(new Error('не вызывается')) };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => { await result.current.refresh(); });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.meetings).toEqual([]);
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.error).toBe('Не удалось получить список записей.');
+  });
+
+  it('ошибка перечитывания после create не подменяется ошибкой создания', async () => {
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('нет связи'));
+    const api: MeetingsApi = {
+      list,
+      create: () => Promise.reject(new Error('слот занят')),
+    };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => {
+      await result.current.createMeeting({ date: futureDate, time: '10:00' });
+    });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.meetings).toEqual([]);
+    expect(result.current.error).toBe('Не удалось получить список записей.');
+  });
+
+  it('старый ответ загрузки не перезаписывает более новый refresh', async () => {
+    let resolveLoad: ((meetings: Meeting[]) => void) | undefined;
+    let resolveRefresh: ((meetings: Meeting[]) => void) | undefined;
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockImplementationOnce(
+        () => new Promise<Meeting[]>((resolve) => { resolveLoad = resolve; })
+      )
+      .mockImplementationOnce(
+        () => new Promise<Meeting[]>((resolve) => { resolveRefresh = resolve; })
+      );
+    const api: MeetingsApi = { list, create: () => Promise.reject(new Error('не вызывается')) };
+    const { result } = renderHook(() => useMeetings(api));
+
+    let refreshing: Promise<void> | undefined;
+    act(() => {
+      refreshing = result.current.refresh();
+    });
+
+    resolveRefresh?.([{ id: 'new', date: futureDate, time: '12:00' }]);
+    await act(async () => { await refreshing; });
+
+    resolveLoad?.([{ id: 'old', date: futureDate, time: '10:00' }]);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(result.current.meetings).toEqual([{ id: 'new', date: futureDate, time: '12:00' }]);
+  });
+
+  it('ошибка создания не сбрасывает loaded: данные списка остаются достоверными', async () => {
+    const api: MeetingsApi = {
+      // Первая загрузка пустая, перечитывание после 409 отдаёт чужую запись.
+      list: vi
+        .fn<() => Promise<Meeting[]>>()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ id: '1', date: futureDate, time: '10:00' }]),
+      create: () => Promise.reject(new Error('дубль слота')),
+    };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.loaded).toBe(true);
+
+    await result.current.createMeeting({ date: futureDate, time: '10:00' });
+
+    await waitFor(() =>
+      expect(result.current.meetings).toEqual([{ id: '1', date: futureDate, time: '10:00' }])
+    );
+    expect(result.current.loaded).toBe(true);
+    expect(result.current.error).not.toBeNull();
   });
 
   it('после конфликта список перечитан и ошибка показана', async () => {

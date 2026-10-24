@@ -6,8 +6,12 @@ import { generateTimeSlots } from '../lib/slots.ts';
 const SLOTS = generateTimeSlots();
 
 interface TimeSlotsProps {
-  /** Слоты этого дня, уже занятые другими записями, 'HH:mm'. */
-  takenTimes: string[];
+  /**
+   * Недоступные слоты этого дня ('HH:mm'): занятые другими записями и уже
+   * начавшиеся сегодня. Считаются в `lib/availability.ts` — компонент правило
+   * не переизобретает.
+   */
+  disabledTimes: string[];
   /** Выбранный слот, 'HH:mm'. */
   time: string | null;
   onChangeTime: (time: string | null) => void;
@@ -16,11 +20,11 @@ interface TimeSlotsProps {
 /**
  * Инлайн-сетка слотов под календарём — шаг «Время» гостевого степпера (D4).
  * Модалку со слотами она заменила: та кнопкой «Записаться» дублировала шаг
- * подтверждения. Занятые слоты выключены; если свободных не осталось вовсе,
+ * подтверждения. Недоступные слоты выключены; если свободных не осталось вовсе,
  * сетка уступает место явному тексту (D4: пустые состояния — тексты, не тишина).
  */
-export default function TimeSlots({ takenTimes, time, onChangeTime }: TimeSlotsProps) {
-  const hasFreeSlot = SLOTS.some((slot) => !takenTimes.includes(slot));
+export default function TimeSlots({ disabledTimes, time, onChangeTime }: TimeSlotsProps) {
+  const hasFreeSlot = SLOTS.some((slot) => !disabledTimes.includes(slot));
 
   if (!hasFreeSlot) {
     return (
@@ -30,5 +34,5 @@ export default function TimeSlots({ takenTimes, time, onChangeTime }: TimeSlotsP
     );
   }
 
-  return <TimeGrid data={SLOTS} value={time} onChange={onChangeTime} disableTime={takenTimes} />;
+  return <TimeGrid data={SLOTS} value={time} onChange={onChangeTime} disableTime={disabledTimes} />;
 }
