@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
@@ -7,13 +7,13 @@ import GuestView from './GuestView.tsx';
 import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 import { createInMemoryMeetingsApi } from './lib/meetings/inMemory.ts';
 import type { MeetingsApi } from './lib/meetings/api.ts';
-import type { Meeting } from './lib/meetings/types.ts';
+import type { DateRange, Meeting } from './lib/meetings/types.ts';
 import { createInMemoryMeetingTypesApi } from './lib/meeting-types/inMemory.ts';
 import type { MeetingTypesApi } from './lib/meeting-types/api.ts';
 import type { MeetingType } from './lib/meeting-types/types.ts';
 import { APP_LOCALE, addDays, formatDateRu } from './lib/date.ts';
 import { nextBookableDate } from './test/bookableDate.ts';
-import { findDayCell } from './test/calendar.ts';
+import { dayByLabel, findDayCell } from './test/calendar.ts';
 import { generateTimeSlots } from './lib/slots.ts';
 
 const DATES_SETTINGS = { locale: APP_LOCALE };
@@ -311,6 +311,104 @@ describe('гостевой вид', () => {
     // Выбранное время больше не свободно — подтверждать его нельзя, даже если
     // состояние `time` ещё хранит '11:00'.
     expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled();
+  });
+
+  it('переход через полночь обновляет момент, окно и перечитывает список', async () => {
+    const user = userEvent.setup();
+    // Гостевое представление читает часы само (`useState(() => now())` и
+    // минутный интервал проверки), инъекция момента сюда не пролезает — поэтому
+    // полночь моделируется фейковыми Date и setInterval. setTimeout остаётся
+    // настоящим, чтобы userEvent работал без продвижения таймеров.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 11, 15, 12, 0)); // вторник, 12:00
+    try {
+      const list = vi
+        .fn<(range: DateRange) => Promise<Meeting[]>>()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ id: '1', date: '2026-12-29', time: '11:00' }]);
+      const { container } = render(
+        <MantineProvider defaultColorScheme="dark">
+          <DatesProvider settings={DATES_SETTINGS}>
+            <GuestView
+              api={{ list, create: () => Promise.reject(new Error('не должен вызываться')) }}
+              typesApi={typesApi()}
+            />
+          </DatesProvider>
+        </MantineProvider>
+      );
+      await act(async () => {}); // заканчиваются загрузки типов и списка
+
+      await pickTypeAndNext(user);
+
+      // До полуночи окно — 15…28 декабря: 29-е ещё вне окна, а у сегодняшнего
+      // 15-го остались только 11 слотов после полудня.
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(list).toHaveBeenNthCalledWith(1, { from: '2026-12-15', to: '2026-12-28' });
+      const futureEdge = dayByLabel(container, '29 декабря 2026');
+      expect(futureEdge).not.toBeNull();
+      expect(futureEdge).toBeDisabled();
+      const todayCell = dayByLabel(container, '15 декабря 2026 — свободно 11');
+      expect(todayCell).not.toBeNull();
+      expect(todayCell).toBeEnabled();
+
+      // Полночь: минутный интервал срабатывает по продвинутым фейковым часам.
+      await act(async () => {
+        vi.setSystemTime(new Date(2026, 11, 16, 0, 1));
+        vi.advanceTimersByTime(60 * 1000);
+      });
+
+      // Список перечитан уже новым окном (refresh берёт свежие today()/now()),
+      // перечитанная запись вошла в счётчик 29-го, а вчерашнее 15-е погасло.
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(list).toHaveBeenNthCalledWith(2, { from: '2026-12-16', to: '2026-12-29' });
+      expect(dayByLabel(container, '15 декабря 2026')).toBeDisabled();
+      const newEdgeCell = dayByLabel(container, '29 декабря 2026 — свободно 17');
+      expect(newEdgeCell).not.toBeNull();
+      expect(newEdgeCell).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('переход через полночь не перечитывает список до первой успешной загрузки', async () => {
+    const user = userEvent.setup();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 11, 15, 12, 0)); // вторник, 12:00
+    try {
+      const list = vi.fn(() => new Promise<Meeting[]>(() => {}));
+      const { container } = render(
+        <MantineProvider defaultColorScheme="dark">
+          <DatesProvider settings={DATES_SETTINGS}>
+            <GuestView
+              api={{ list, create: () => Promise.reject(new Error('не должен вызываться')) }}
+              typesApi={typesApi()}
+            />
+          </DatesProvider>
+        </MantineProvider>
+      );
+      await act(async () => {});
+      await pickTypeAndNext(user);
+
+      // Первый ответ так и не пришёл: список недостоверен, ночной рефреш
+      // запускать нельзя — иначе получилась бы вторая первичная загрузка.
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(dayByLabel(container, '29 декабря 2026')).toBeDisabled();
+
+      await act(async () => {
+        vi.setSystemTime(new Date(2026, 11, 16, 0, 1));
+        vi.advanceTimersByTime(60 * 1000);
+      });
+
+      expect(list).toHaveBeenCalledTimes(1);
+      // Момент при этом обновился — 29-е вошло в окно, но без счётчиков:
+      // список ни разу не загружался, refresh не дёргался.
+      const edge = dayByLabel(container, '29 декабря 2026');
+      expect(edge).not.toBeNull();
+      expect(edge).toBeEnabled();
+      expect(edge).not.toHaveAttribute('data-free-count');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('«Далее» в подтверждение доступно только со слотом; сводка тип/дата/время', async () => {
