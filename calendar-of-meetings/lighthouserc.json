@@ -3,6 +3,7 @@
     "collect": {
       "numberOfRuns": 3,
       "startServerCommand": "AUTH_DISABLED=1 npm start",
+      "startServerReadyTimeout": 60000,
       "url": "http://localhost:4000/"
     },
     "assert": {
