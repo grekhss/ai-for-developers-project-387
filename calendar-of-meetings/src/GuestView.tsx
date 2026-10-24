@@ -75,16 +75,13 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
     const checkMidnight = () => {
       if (cancelled) return;
       const day = today();
-      const nowValue = now();
       if (currentDayRef.current !== day) {
         currentDayRef.current = day;
-        setMoment(nowValue);
+        setMoment(now());
         if (initialLoadDoneRef.current) {
           void refresh();
         }
-        return;
       }
-      setMoment(nowValue);
     };
 
     checkMidnight();
