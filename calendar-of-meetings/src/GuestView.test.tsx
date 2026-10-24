@@ -29,6 +29,14 @@ function typesApi(types: MeetingType[] = TYPES): MeetingTypesApi {
   return createInMemoryMeetingTypesApi(types);
 }
 
+/** Типы, которые никогда не загрузятся: нужен только экран загрузки. */
+function hangingTypesApi(): MeetingTypesApi {
+  return {
+    ...typesApi(),
+    list: () => new Promise<MeetingType[]>(() => {}),
+  };
+}
+
 // Своё хранилище на каждый тест (значения по умолчанию): записи и типы не
 // должны утекать между сценариями.
 async function renderGuestView(
@@ -612,15 +620,10 @@ describe('гостевой вид', () => {
   });
 
   it('пока типы грузятся — «Загрузка типов встреч…» вместо степпера', async () => {
-    const hanging: MeetingTypesApi = {
-      ...typesApi(),
-      list: () => new Promise<MeetingType[]>(() => {}),
-    };
-
     render(
       <MantineProvider defaultColorScheme="dark">
         <DatesProvider settings={DATES_SETTINGS}>
-          <GuestView api={createInMemoryMeetingsApi()} typesApi={hanging} />
+          <GuestView api={createInMemoryMeetingsApi()} typesApi={hangingTypesApi()} />
         </DatesProvider>
       </MantineProvider>
     );
