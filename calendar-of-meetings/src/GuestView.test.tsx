@@ -403,6 +403,10 @@ describe('гостевой вид', () => {
 
     expect(screen.getByRole('button', { name: 'Запись…' })).toBeDisabled();
 
+    // Пока бронь в полёте, ручное перечитывание тоже недоступно.
+    await user.click(screen.getByText('Время'));
+    expect(screen.getByRole('button', { name: 'Обновить' })).toBeDisabled();
+
     resolveCreate?.({ id: 'new', date, time: '11:00' });
     await screen.findByText(/^Запись:/);
   });
@@ -424,6 +428,33 @@ describe('гостевой вид', () => {
     // должны остаться, а не исчезнуть вместе с `error`.
     await user.click(screen.getByText('Время'));
     expect(container.querySelector('button[data-free-count]')).not.toBeNull();
+  });
+
+  it('ошибка перечитывания после создания оставляет ошибку загрузки', async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('нет связи'));
+    const { container } = await renderGuestView({
+      list,
+      create: () => Promise.reject(new Error('слот занят')),
+    });
+    await pickTypeAndNext(user);
+    await pickSlot(user, container);
+
+    await user.click(screen.getByRole('button', { name: 'Записаться' }));
+
+    // CREATE_ERROR не должен перетирать LOAD_ERROR: список недоступен, сетка
+    // скрыта, и «выберите другое время» было бы советом в пустоту.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось получить список записей.'
+    );
+    expect(container.querySelector('button[data-free-count]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Записаться' })).toBeDisabled();
+
+    await user.click(screen.getByText('Время'));
+    expect(screen.getByText('Слоты недоступны: список записей не загружен.')).toBeInTheDocument();
   });
 
   it('занятый слот в следующий раз не выбирается', async () => {

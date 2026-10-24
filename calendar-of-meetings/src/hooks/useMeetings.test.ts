@@ -128,6 +128,28 @@ describe('useMeetings', () => {
     expect(result.current.error).toBe('Не удалось получить список записей.');
   });
 
+  it('ошибка перечитывания после create не подменяется ошибкой создания', async () => {
+    const list = vi
+      .fn<() => Promise<Meeting[]>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('нет связи'));
+    const api: MeetingsApi = {
+      list,
+      create: () => Promise.reject(new Error('слот занят')),
+    };
+    const { result } = renderHook(() => useMeetings(api));
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    await act(async () => {
+      await result.current.createMeeting({ date: futureDate, time: '10:00' });
+    });
+
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.meetings).toEqual([]);
+    expect(result.current.error).toBe('Не удалось получить список записей.');
+  });
+
   it('старый ответ загрузки не перезаписывает более новый refresh', async () => {
     let resolveLoad: ((meetings: Meeting[]) => void) | undefined;
     let resolveRefresh: ((meetings: Meeting[]) => void) | undefined;

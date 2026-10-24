@@ -105,10 +105,14 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
       // При конфликте (409) сервер не создал запись, а локальный список устарел:
       // чужой занятый слот остался бы визуально свободным. Сначала перечитываем,
       // потом ставим текст ошибки — refresh при успехе сбрасывает error в null,
-      // и наоборот порядок стёр бы CREATE_ERROR. Флаг `loaded` при этом остаётся
-      // true, поэтому счётчики календаря не пропадают из-за ошибки создания.
+      // и наоборот порядок стёр бы CREATE_ERROR. Если само перечитывание упало,
+      // `loaded` уже false и в error лежит LOAD_ERROR: он информативнее, потому
+      // что сетка скрыта и выбрать другое время нельзя.
       await refresh();
-      setState((previous) => ({ ...previous, error: CREATE_ERROR }));
+      setState((previous) => ({
+        ...previous,
+        error: previous.loaded ? CREATE_ERROR : previous.error,
+      }));
       return null;
     }
   }, [api, refresh]);

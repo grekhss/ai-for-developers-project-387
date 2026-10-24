@@ -27,14 +27,23 @@ export function takenTimesByDay(meetings: Meeting[]): Record<string, string[]> {
  * Это ровно то, что выключает `TimeSlots`, — чтобы сетка и счётчик в календаре
  * считали «свободное» по одному правилу.
  */
+function unavailableFromSlots(
+  day: string,
+  takenTimes: string[],
+  moment: string,
+  slots: string[],
+): string[] {
+  return slots.filter(
+    (time) => takenTimes.includes(time) || !isBookableSlot(day, time, moment),
+  );
+}
+
 export function unavailableTimes(
   day: string,
   takenTimes: string[],
   moment: string,
 ): string[] {
-  return generateTimeSlots().filter(
-    (time) => takenTimes.includes(time) || !isBookableSlot(day, time, moment),
-  );
+  return unavailableFromSlots(day, takenTimes, moment, generateTimeSlots());
 }
 
 /**
@@ -60,7 +69,7 @@ export function freeSlotCounts(
 
     // Тот же список недоступного, что получает TimeSlots: счётчик не может
     // разойтись с сеткой, даже если правило слотов изменится.
-    counts[day] = slots.length - unavailableTimes(day, taken[day] ?? [], moment).length;
+    counts[day] = slots.length - unavailableFromSlots(day, taken[day] ?? [], moment, slots).length;
   }
 
   return counts;

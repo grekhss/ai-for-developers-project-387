@@ -15,6 +15,32 @@ export function dayByLabel(container: HTMLElement, label: string): HTMLButtonEle
   );
 }
 
+function monthHeader(container: HTMLElement): HTMLButtonElement | null {
+  return container.querySelector<HTMLButtonElement>('.mantine-DatePicker-calendarHeaderLevel');
+}
+
+async function advanceToMonth(
+  target: string,
+  container: HTMLElement,
+  user: DayClicker,
+  remaining: number,
+): Promise<void> {
+  if (monthHeader(container)?.textContent === target) return;
+
+  if (remaining === 0) {
+    throw new Error(`календарь не перелистнулся к месяцу ${target}`);
+  }
+
+  const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
+
+  if (next === null) {
+    throw new Error(`нет кнопки перехода к месяцу ${target}`);
+  }
+
+  await user.click(next);
+  await advanceToMonth(target, container, user, remaining - 1);
+}
+
 /**
  * Перелистывает календарь вперёд к месяцу даты. Даты гостевого окна не дальше
  * двух месяцев от текущего, поэтому двух кликов достаточно.
@@ -25,22 +51,7 @@ export async function showMonthOf(
   user: DayClicker,
 ): Promise<void> {
   const target = dayjs(date).locale(APP_LOCALE).format('MMMM YYYY');
-  const header = () =>
-    container.querySelector<HTMLButtonElement>('.mantine-DatePicker-calendarHeaderLevel');
-
-  for (let step = 0; step < 2 && header()?.textContent !== target; step++) {
-    const next = container.querySelector<HTMLButtonElement>('[data-direction="next"]');
-
-    if (next === null) {
-      throw new Error(`нет кнопки перехода к месяцу ${target}`);
-    }
-
-    await user.click(next);
-  }
-
-  if (header()?.textContent !== target) {
-    throw new Error(`календарь не перелистнулся к месяцу ${target}`);
-  }
+  await advanceToMonth(target, container, user, 2);
 }
 
 /** Ищет день по `aria-label`; если его нет, листает на месяц вперёд. */

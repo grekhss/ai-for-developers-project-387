@@ -194,7 +194,7 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
               <Button
                 variant="subtle"
                 size="xs"
-                disabled={loading || refreshing}
+                disabled={loading || refreshing || creating}
                 onClick={() => { void refresh(); }}
               >
                 {refreshing ? 'Обновление…' : 'Обновить'}
