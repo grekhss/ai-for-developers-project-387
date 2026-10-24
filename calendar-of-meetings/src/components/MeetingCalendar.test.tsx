@@ -9,6 +9,8 @@ import { APP_LOCALE, addDays, formatDateRu, now, today } from '../lib/date.ts';
 import { nextBookableDate } from '../test/bookableDate.ts';
 import { dayByLabel, showMonthOf } from '../test/calendar.ts';
 
+const DATES_SETTINGS = { locale: APP_LOCALE };
+
 function renderCalendar(
   props: {
     value?: string | null;
@@ -20,7 +22,7 @@ function renderCalendar(
   const moment = props.moment ?? now();
   const view = render(
     <MantineProvider defaultColorScheme="dark">
-      <DatesProvider settings={{ locale: APP_LOCALE }}>
+      <DatesProvider settings={DATES_SETTINGS}>
         <MeetingCalendar
           value={props.value ?? null}
           onSelect={onSelect}
