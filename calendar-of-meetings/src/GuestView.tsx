@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Group, Radio, Stack, Stepper, Text } from '@mantine/core';
 import MeetingCalendar from './components/MeetingCalendar.tsx';
 import TimeSlots from './components/TimeSlots.tsx';
@@ -6,7 +6,7 @@ import { useMeetings } from './hooks/useMeetings.ts';
 import { useMeetingTypes } from './hooks/useMeetingTypes.ts';
 import { meetingsApi, type MeetingsApi } from './lib/meetings/api.ts';
 import { meetingTypesApi, type MeetingTypesApi } from './lib/meeting-types/api.ts';
-import { formatDateRu, now } from './lib/date.ts';
+import { formatDateRu, now, today } from './lib/date.ts';
 import { freeSlotCounts, takenTimesByDay, unavailableTimes } from './lib/availability.ts';
 import { NO_MEETING_TYPES_HINT, NO_MEETING_TYPES_TITLE } from './guestViewCopy.ts';
 
@@ -58,8 +58,43 @@ export default function GuestView({ api = meetingsApi, typesApi = meetingTypesAp
   const { meetings, loading, refreshing, loaded, error, refresh, createMeeting } = useMeetings(api);
   const { meetingTypes, loading: typesLoading, error: typesError } = useMeetingTypes(typesApi);
 
-  // Одно «сейчас» на рендер: календарь, счётчики и сетка слотов считают одинаково.
-  const moment = now();
+  // «Сейчас» обновляем при переходе через локальную полночь: иначе окно и список
+  // расходятся до ручного «Обновить». Обновление запускаем только если уже был
+  // успешный ответ списка, чтобы не дублировать первичную загрузку.
+  const [moment, setMoment] = useState(() => now());
+  const currentDayRef = useRef(today());
+  const initialLoadDoneRef = useRef(loaded);
+
+  useEffect(() => {
+    initialLoadDoneRef.current = loaded;
+  }, [loaded]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkMidnight = () => {
+      if (cancelled) return;
+      const day = today();
+      const nowValue = now();
+      if (currentDayRef.current !== day) {
+        currentDayRef.current = day;
+        setMoment(nowValue);
+        if (initialLoadDoneRef.current) {
+          void refresh();
+        }
+        return;
+      }
+      setMoment(nowValue);
+    };
+
+    checkMidnight();
+    const intervalId = setInterval(checkMidnight, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [refresh]);
   // Единственный источник занятости: из него берут данные и счётчики календаря,
   // и недоступные слоты сетки — разойтись они не могут.
   const takenByDay = takenTimesByDay(meetings);
