@@ -13,6 +13,8 @@ dist-server
 dist-ssr
 # Промежуточный выход tsp compile (npm run contract переносит спеку в contract/openapi.yaml).
 tsp-output
+# Отчёты Lighthouse CI (lhci autorun).
+.lighthouseci
 data/
 # Секреты окружения (создаётся из .env.example); сам .env.example — коммитится.
 .env
