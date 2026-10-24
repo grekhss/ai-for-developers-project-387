@@ -1,0 +1,34 @@
+name: CI
+
+on: [push]
+
+# Пакет один и лежит в calendar-of-meetings — в корне репозитория нет ни
+# package.json, ни lighthouserc, поэтому все шаги выполняются в каталоге пакета.
+defaults:
+  run:
+    working-directory: calendar-of-meetings
+
+jobs:
+  lhci:
+    name: Lighthouse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          # Кеш npm и lock — в каталоге пакета, а не в корне репозитория.
+          cache: npm
+          cache-dependency-path: calendar-of-meetings/package-lock.json
+      - name: npm ci, build
+        run: |
+          npm ci
+          npm run build
+      # lighthouserc.json лежит рядом с пакетом: lhci autorun поднимает
+      # прод-сервер (AUTH_DISABLED=1 — дев-обход, роль гостя для '/')
+      # и снимает метрики с http://localhost:4000/.
+      - name: run Lighthouse CI
+        run: |
+          npm install -g @lhci/cli@0.15.x
+          lhci autorun
