@@ -1,6 +1,6 @@
 name: CI
 
-on: [push]
+on: [push, workflow_dispatch]
 
 # Пакет один и лежит в calendar-of-meetings — в корне репозитория нет ни
 # package.json, ни lighthouserc, поэтому все шаги выполняются в каталоге пакета.
@@ -27,8 +27,7 @@ jobs:
           npm run build
       # lighthouserc.json лежит рядом с пакетом: lhci autorun поднимает
       # прод-сервер (AUTH_DISABLED=1 — дев-обход, роль гостя для '/')
-      # и снимает метрики с http://localhost:4000/.
+      # и снимает метрики с http://localhost:4000/. Глобальную установку
+      # заменили на npx: меньше шагов и переиспользует npm-кеш раннера.
       - name: run Lighthouse CI
-        run: |
-          npm install -g @lhci/cli@0.15.x
-          lhci autorun
+        run: npx --yes @lhci/cli@0.15.x autorun
