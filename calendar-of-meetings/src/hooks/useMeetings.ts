@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { meetingsApi, type MeetingsApi } from '../lib/meetings/api.ts';
 import type { Meeting, MeetingDraft } from '../lib/meetings/types.ts';
 import { now, today } from '../lib/date.ts';
@@ -11,6 +11,13 @@ interface MeetingsState {
   meetings: Meeting[];
   /** Пока первый ответ не пришёл. */
   loading: boolean;
+  /** Пока идёт ручное перечитывание списка. */
+  refreshing: boolean;
+  /**
+   * Хотя бы один список успешно получен. По этому флагу страница считает
+   * счётчики: ошибка создания записи не должна прятать уже достоверные данные.
+   */
+  loaded: boolean;
   /** Текст ошибки для показа пользователю; `null`, если всё в порядке. */
   error: string | null;
 }
@@ -35,8 +42,13 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
   const [state, setState] = useState<MeetingsState>({
     meetings: [],
     loading: true,
+    refreshing: false,
+    loaded: false,
     error: null,
   });
+
+  // Номер последнего запроса: более старый ответ не должен перезаписать свежий.
+  const latestRequest = useRef(0);
 
   // Запрос сам по себе состояние не трогает — только возвращает данные.
   // Диапазон — гостевое окно (Q5: сегодня … сегодня+13), а не прежние 90
@@ -53,10 +65,34 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
   );
 
   const refresh = useCallback(async () => {
+    const requestId = ++latestRequest.current;
+    setState((previous) => ({ ...previous, refreshing: true }));
+
     try {
-      setState({ meetings: await request(), loading: false, error: null });
+      const meetings = await request();
+      if (requestId !== latestRequest.current) return;
+
+      setState((previous) => ({
+        ...previous,
+        meetings,
+        loading: false,
+        refreshing: false,
+        loaded: true,
+        error: null,
+      }));
     } catch {
-      setState((previous) => ({ ...previous, loading: false, error: LOAD_ERROR }));
+      if (requestId !== latestRequest.current) return;
+
+      setState((previous) => ({
+        ...previous,
+        // Ошибка перечитывания делает и старый список недостоверным: страница
+        // прячет счётчики и сетку, пока «Обновить» не завершится успехом.
+        meetings: [],
+        loading: false,
+        refreshing: false,
+        loaded: false,
+        error: LOAD_ERROR,
+      }));
     }
   }, [request]);
 
@@ -68,10 +104,15 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
     } catch {
       // При конфликте (409) сервер не создал запись, а локальный список устарел:
       // чужой занятый слот остался бы визуально свободным. Сначала перечитываем,
-      // потом ставим текст ошибки — refresh при успехе сбрасывает error в null
-      // (useMeetings.ts:57), и наоборот порядок стёр бы CREATE_ERROR.
+      // потом ставим текст ошибки — refresh при успехе сбрасывает error в null,
+      // и наоборот порядок стёр бы CREATE_ERROR. Если само перечитывание упало,
+      // `loaded` уже false и в error лежит LOAD_ERROR: он информативнее, потому
+      // что сетка скрыта и выбрать другое время нельзя.
       await refresh();
-      setState((previous) => ({ ...previous, error: CREATE_ERROR }));
+      setState((previous) => ({
+        ...previous,
+        error: previous.loaded ? CREATE_ERROR : previous.error,
+      }));
       return null;
     }
   }, [api, refresh]);
@@ -83,13 +124,24 @@ export function useMeetings(api: MeetingsApi = meetingsApi): UseMeetingsResult {
   // эффект вызывается дважды.
   useEffect(() => {
     let cancelled = false;
+    const requestId = ++latestRequest.current;
 
     const load = async () => {
       try {
         const meetings = await request();
-        if (!cancelled) setState({ meetings, loading: false, error: null });
+        if (cancelled || requestId !== latestRequest.current) return;
+
+        setState({ meetings, loading: false, refreshing: false, loaded: true, error: null });
       } catch {
-        if (!cancelled) setState({ meetings: [], loading: false, error: LOAD_ERROR });
+        if (cancelled || requestId !== latestRequest.current) return;
+
+        setState({
+          meetings: [],
+          loading: false,
+          refreshing: false,
+          loaded: false,
+          error: LOAD_ERROR,
+        });
       }
     };
 
