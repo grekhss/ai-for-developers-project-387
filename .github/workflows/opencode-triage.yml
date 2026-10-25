@@ -6,6 +6,7 @@ on:
 
 jobs:
   triage:
+    if: github.actor != 'opencode-agent[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
