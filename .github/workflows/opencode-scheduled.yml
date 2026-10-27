@@ -9,10 +9,17 @@ jobs:
   opencode:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Права по учебной схеме (код + результаты CI — чтение), кроме issues:
+    # эта задача сама открывает issue по найденным TODO, поэтому issues
+    # остаётся write. id-token не нужен: use_github_token: true, OIDC-обмен
+    # не выполняется.
     permissions:
-      id-token: write
       contents: read
       issues: write
+      actions: read
+      checks: read
+      statuses: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
