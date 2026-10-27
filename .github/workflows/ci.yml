@@ -9,6 +9,25 @@ defaults:
     working-directory: calendar-of-meetings
 
 jobs:
+  # Гейт проекта (правила AGENTS.md): контракт-дрейф + oxlint + обе
+  # типизации + vitest. Отдельный джоб рядом с Lighthouse: падение любого
+  # из них блокирует мердж, а статусы на PR читаются раздельно.
+  check:
+    name: Gate (lint, types, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: calendar-of-meetings/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: npm run check
+        run: npm run check
+
   lhci:
     name: Lighthouse
     runs-on: ubuntu-latest
