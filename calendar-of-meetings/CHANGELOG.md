@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.0](https://github.com/grekhss/ai-for-developers-project-387/compare/calendar-of-meetings-v1.0.0...calendar-of-meetings-v1.1.0) (2026-10-27)
+
+
+### Features
+
+* **guest:** show free slots and refresh the meeting list ([99ec76d](https://github.com/grekhss/ai-for-developers-project-387/commit/99ec76de5e8e25b454a4ff7f73679d2c295581d8))
+* **guest:** show free slots and refresh the meeting list ([f326ea8](https://github.com/grekhss/ai-for-developers-project-387/commit/f326ea8188ded577969ec565790f9f920edce161))
+
+
+### Bug Fixes
+
+* **guest:** keep booking state honest after stale slots ([ea693c4](https://github.com/grekhss/ai-for-developers-project-387/commit/ea693c4197e76f6e73a91ff588e12adef7c93ffe))
+* **guest:** keep free-slot data consistent through refresh ([db81926](https://github.com/grekhss/ai-for-developers-project-387/commit/db8192656e9abc92cf738d08f37fbbfbb3183e53))
+* **guest:** only update moment on midnight change ([ca9fe94](https://github.com/grekhss/ai-for-developers-project-387/commit/ca9fe94ac0ec9b12653ca204561d8638a2d6f1cc))
+* **guest:** preserve load errors and freeze refresh during booking ([43d9d62](https://github.com/grekhss/ai-for-developers-project-387/commit/43d9d621edee5131cf05ef26af76e9490499ca04))
+* **guest:** refresh moment and list at local midnight ([e4b33a7](https://github.com/grekhss/ai-for-developers-project-387/commit/e4b33a7b30fc0d0e8ed108a046788d26eb452f6d))
+* **guest:** refresh moment and list at local midnight ([cece577](https://github.com/grekhss/ai-for-developers-project-387/commit/cece5774fa1578966a02353806719243a91d73e1))
+
 ## 1.0.0 (2026-10-27)
 
 
