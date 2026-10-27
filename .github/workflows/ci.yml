@@ -68,3 +68,8 @@ jobs:
       - name: run Lighthouse CI
         run: npx --yes @lhci/cli@0.15.x autorun
         working-directory: calendar-of-meetings
+        env:
+          # Дев-обход авторизации для поднимаемого lhci сервера: без него
+          # npm start падает на проверке пустых паролей (assertValidAuth).
+          # lhci наследует окружение шага — проверено негативным контролем.
+          AUTH_DISABLED: '1'
