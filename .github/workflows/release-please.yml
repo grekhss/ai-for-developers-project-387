@@ -1,0 +1,29 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+# release-please открывает release-PR и ставит git-теги при его мердже —
+# для этого нужны права на содержимое и на PR. Сам release-PR мержит
+# владелец: прямых пушей в main нет и тут.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Быстрые мерджи подряд: отменённый прогон не страшен — следующий пуш в
+# main пересчитает состояние по манифесту и доделает release-PR.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # Пакет не в корне: конфиг и манифест описывают calendar-of-meetings.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
