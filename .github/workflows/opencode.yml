@@ -8,11 +8,16 @@ on:
 
 jobs:
   opencode:
+    # /oc доверяем только своим: владелец, участники и коллабораторы —
+    # публичный вызов агента от анонимов запрещён. Ботов исключаем, чтобы
+    # их комментарии не запускали новые задания.
     if: |
       ( contains(github.event.comment.body, ' /oc') ||
       startsWith(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, ' /opencode') ||
-      startsWith(github.event.comment.body, '/opencode') ) && github.actor != 'github-actions[bot]' && github.actor != 'opencode-agent[bot]'
+      startsWith(github.event.comment.body, '/opencode') ) &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+      github.event.comment.author_association) && github.actor != 'github-actions[bot]' && github.actor != 'opencode-agent[bot]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -31,12 +36,3 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} # имя секрета зависит от провайдера в model
         with:
           model: opencode/big-pickle
-
-      - uses: anomalyco/opencode/github@latest
-        with:
-          model: opencode/big-pickle
-          prompt: |
-            Review this pull request:
-            - Check for code quality issues
-            - Look for potential bugs
-            - Suggest improvements
