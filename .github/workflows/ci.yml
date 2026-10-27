@@ -2,16 +2,51 @@ name: CI
 
 on: [push, workflow_dispatch]
 
-# Пакет один и лежит в calendar-of-meetings — в корне репозитория нет ни
-# package.json, ни lighthouserc, поэтому все шаги выполняются в каталоге пакета.
-defaults:
-  run:
-    working-directory: calendar-of-meetings
+# Минимальные права на весь workflow: джобы только читают репозиторий
+# (checkout) — публиковать ничего не нужно.
+permissions:
+  contents: read
 
+# Новый пуш в ту же ветку отменяет ещё не завершённый прогон: устаревшие
+# запуски не копятся и не тратят минуты раннеров.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Пакет один и лежит в calendar-of-meetings — в корне репозитория нет ни
+# package.json, ни lighthouserc. Каталог пакета задан явно в каждом
+# run-шаге: шаги самодостаточны и не зависят от файлового defaults.
 jobs:
+  # Гейт проекта (правила AGENTS.md): контракт-дрейф + oxlint + обе
+  # типизации + vitest. Отдельный джоб рядом с Lighthouse: падение любого
+  # из них блокирует мердж, а статусы на PR читаются раздельно.
+  check:
+    name: Gate (lint, types, tests)
+    runs-on: ubuntu-latest
+    # Зависший прогон не должен съедать лимит минут: гейт локально
+    # проходит за ~2 минуты, 15 — запас на медленный раннер.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: calendar-of-meetings/package-lock.json
+      - name: npm ci
+        run: npm ci
+        working-directory: calendar-of-meetings
+      - name: npm run check
+        run: npm run check
+        working-directory: calendar-of-meetings
+
   lhci:
     name: Lighthouse
     runs-on: ubuntu-latest
+    # Три прогона Lighthouse по живому серверу занимают несколько минут;
+    # зависший autorun тоже не должен висеть вечно.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 22.x
@@ -25,9 +60,16 @@ jobs:
         run: |
           npm ci
           npm run build
+        working-directory: calendar-of-meetings
       # lighthouserc.json лежит рядом с пакетом: lhci autorun поднимает
       # прод-сервер (AUTH_DISABLED=1 — дев-обход, роль гостя для '/')
       # и снимает метрики с http://localhost:4000/. Глобальную установку
       # заменили на npx: меньше шагов и переиспользует npm-кеш раннера.
       - name: run Lighthouse CI
         run: npx --yes @lhci/cli@0.15.x autorun
+        working-directory: calendar-of-meetings
+        env:
+          # Дев-обход авторизации для поднимаемого lhci сервера: без него
+          # npm start падает на проверке пустых паролей (assertValidAuth).
+          # lhci наследует окружение шага — проверено негативным контролем.
+          AUTH_DISABLED: '1'
