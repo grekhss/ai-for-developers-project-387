@@ -56,7 +56,7 @@
 Ведёт версии и changelog по Conventional Commits.
 ### Триггеры запуска: Пуш в main.
 ### Что делает: Открывает/обновляет release-PR «chore(main): release calendar-of-meetings X.Y.Z» — бамп `package.json` с локфайлом и `calendar-of-meetings/CHANGELOG.md` из истории feat:/fix:. Мердж release-PR владельцем ставит git-тег и GitHub Release. Состояние версий — `.release-please-manifest.json`.
-### Важно: манифест — строго плоская карта «путь пакета → строка версии», без служебных ключей: рантайм release-please парсит каждый верхнеуровневый ключ как версию (добавленный когда-то `$schema` ломал все прогоны: `unable to parse version string`). В отличие от манифеста, в `release-please-config.json` `$schema` допустим.
+### Важно: манифест — строго плоская карта «путь пакета → строка версии», без служебных ключей: рантайм release-please парсит каждый верхнеуровневый ключ как версию (добавленный когда-то `$schema` ломал все прогоны: `unable to parse version string`). В отличие от манифеста, в `release-please-config.json` `$schema` допустим. Исторический контекст — упавший прогон: [#40554698482](https://github.com/grekhss/ai-for-developers-project-387/actions/runs/40554698482).
 ### Прогоны: [Actions → release-please](https://github.com/grekhss/ai-for-developers-project-387/actions/workflows/release-please.yml)
 
 # Модели и публикация сессий (share)
