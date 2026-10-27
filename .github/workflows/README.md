@@ -56,6 +56,7 @@
 Ведёт версии и changelog по Conventional Commits.
 ### Триггеры запуска: Пуш в main.
 ### Что делает: Открывает/обновляет release-PR «chore(main): release calendar-of-meetings X.Y.Z» — бамп `package.json` с локфайлом и `calendar-of-meetings/CHANGELOG.md` из истории feat:/fix:. Мердж release-PR владельцем ставит git-тег и GitHub Release. Состояние версий — `.release-please-manifest.json`.
+### Важно: манифест — строго плоская карта «путь пакета → строка версии», без служебных ключей: рантайм release-please парсит каждый верхнеуровневый ключ как версию (добавленный когда-то `$schema` ломал все прогоны: `unable to parse version string`). В отличие от манифеста, в `release-please-config.json` `$schema` допустим.
 ### Прогоны: [Actions → release-please](https://github.com/grekhss/ai-for-developers-project-387/actions/workflows/release-please.yml)
 
 # Модели и публикация сессий (share)
@@ -66,6 +67,8 @@
   проект учебный, не коммерческий; секретов и персональных данных в сессиях нет.
 - Параметр `share` в `.github/workflows/opencode.yml` **не выставлен**: в
   актуальной документации экшена `anomalyco/opencode/github` такой вход не описан.
+  Если документация экшена обновится (вход `share` появится или сменит смысл) —
+  решение по публикации и значению параметра нужно пересмотреть.
 
 # Automatic tests
 
