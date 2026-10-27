@@ -2,8 +2,20 @@ name: CI
 
 on: [push, workflow_dispatch]
 
+# Минимальные права на весь workflow: джобы только читают репозиторий
+# (checkout) — публиковать ничего не нужно.
+permissions:
+  contents: read
+
+# Новый пуш в ту же ветку отменяет ещё не завершённый прогон: устаревшие
+# запуски не копятся и не тратят минуты раннеров.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # Пакет один и лежит в calendar-of-meetings — в корне репозитория нет ни
-# package.json, ни lighthouserc, поэтому все шаги выполняются в каталоге пакета.
+# package.json, ни lighthouserc. Оба джоба ниже полагаются на этот
+# defaults.run.working-directory: при правке файла не потеряйте его.
 defaults:
   run:
     working-directory: calendar-of-meetings
@@ -15,6 +27,9 @@ jobs:
   check:
     name: Gate (lint, types, tests)
     runs-on: ubuntu-latest
+    # Зависший прогон не должен съедать лимит минут: гейт локально
+    # проходит за ~2 минуты, 15 — запас на медленный раннер.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 22.x
