@@ -25,5 +25,8 @@ jobs:
       - uses: googleapis/release-please-action@v4
         with:
           # Пакет не в корне: конфиг и манифест описывают calendar-of-meetings.
+          # Манифест — строго «путь пакета → версия», БЕЗ служебных ключей:
+          # каждый верхнеуровневый ключ рантайм парсит как версию, $schema
+          # ломает все прогоны. В конфиге $schema допустим.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
